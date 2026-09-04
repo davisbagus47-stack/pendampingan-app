@@ -9,20 +9,6 @@
         "installCommand": "npm install",
         "buildCommand": "npm run build"
       }
-    },
-    {
-      "src": "backend/api/submit.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/backend/api/submit"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/frontend/build/$1"
     }
   ]
 }

@@ -8,7 +8,7 @@ const getCredentials = () => {
     return JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
   }
   try {
-    return require('../service_account.json');
+    return require('../backend/service_account.json');
   } catch (e) {
     throw new Error('Kredensial Google tidak ditemukan. Isi env GOOGLE_CREDENTIALS_JSON atau file service_account.json.');
   }
