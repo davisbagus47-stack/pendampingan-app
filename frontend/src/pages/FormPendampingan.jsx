@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import './FormPendampingan.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+const API_URL = process.env.REACT_APP_API_URL || window.location.origin;
 
 const OPSI_PENDAMPINGAN = [
   'Pemberian Makanan Tambahan (PMT)',
