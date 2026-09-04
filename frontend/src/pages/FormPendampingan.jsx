@@ -85,7 +85,7 @@ const FormPendampingan = () => {
     setLoading(true);
     setStatus(null);
     try {
-      await axios.post(`${API_URL}/submit`, formData);
+      await axios.post(`${API_URL}/api/submit`, formData);
       setStatus({ type: 'success', message: 'Data berhasil dikirim ke Google Sheets.' });
       setFormData(FORM_AWAL);
     } catch (error) {

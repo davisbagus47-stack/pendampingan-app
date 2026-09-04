@@ -1,26 +1,26 @@
 // Backend untuk menyimpan data pendampingan ke Google Sheets
+// Bisa jalan lokal (npm start) maupun sebagai serverless function di Vercel
 const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
-require('dotenv').config();
+try {
+  require('dotenv').config();
+} catch (e) {
+  // dotenv tidak tersedia (Vercel) — abaikan
+}
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 
-const auth = new google.auth.GoogleAuth({
-  credentials: require('./service_account.json'),
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
+const getAuth = () =>
+  new google.auth.GoogleAuth({
+    credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
 
 const SHEET_ID = process.env.SHEET_ID;
 const SHEET_NAME = process.env.SHEET_NAME || 'Sheet1';
-const PORT = process.env.PORT || 3001;
-
-if (!SHEET_ID) {
-  console.error('SHEET_ID belum diisi di file .env');
-  process.exit(1);
-}
 
 const tombol = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
@@ -80,26 +80,19 @@ const validate = (body) => {
   return errors;
 };
 
-app.get('/', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'Backend Pendampingan Keluarga TPK',
-    endpoint: 'POST /submit',
-  });
+app.get('/api', (req, res) => {
+  res.json({ status: 'ok', service: 'Backend Pendampingan Keluarga TPK', endpoint: 'POST /api/submit' });
 });
 
-app.post('/submit', async (req, res) => {
+app.post('/api/submit', async (req, res) => {
   try {
     const body = req.body || {};
     const errors = validate(body);
     if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Data tidak lengkap atau tidak valid: ${errors.join(', ')}`,
-        errors,
-      });
+      return res.status(400).json({ success: false, message: `Data tidak lengkap atau tidak valid: ${errors.join(', ')}`, errors });
     }
 
+    const auth = getAuth();
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
 
@@ -117,13 +110,14 @@ app.post('/submit', async (req, res) => {
     });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Gagal menyimpan data:`, error.message);
-    res.status(500).json({
-      success: false,
-      message: 'Gagal menyimpan data ke Google Sheets',
-    });
+    res.status(500).json({ success: false, message: 'Gagal menyimpan data ke Google Sheets' });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server jalan di http://localhost:${PORT}`);
-});
+// Fallback agar jalan lokal juga
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => console.log(`Server jalan di http://localhost:${PORT}`));
+}
+
+module.exports = app;
