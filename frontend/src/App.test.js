@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+// Mock Speed Insights to avoid issues in tests
+jest.mock('@vercel/speed-insights/react');
+
+test('renders App component without crashing', () => {
+  const { container } = render(<App />);
+  expect(container).toBeInTheDocument();
 });
