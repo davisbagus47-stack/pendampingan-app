@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import './FormPendampingan.css';
 
@@ -132,14 +132,6 @@ const Field = ({ label, required, children }) => (
     </label>
     {children}
   </div>
-);
-
-const YesNo = ({ name, value, onChange, labelYa, labelTidak }) => (
-  <select name={name} value={value} onChange={onChange}>
-    <option value="">-- Pilih --</option>
-    <option value="Ya">{labelYa || 'Ya'}</option>
-    <option value="Tidak">{labelTidak || 'Tidak'}</option>
-  </select>
 );
 
 const FormPendampingan = () => {
