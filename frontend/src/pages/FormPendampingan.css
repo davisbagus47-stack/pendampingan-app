@@ -94,6 +94,30 @@
   border-radius: 2px;
 }
 
+.card-desc {
+  margin: -10px 0 16px;
+  font-size: 13px;
+  color: #6b7a8a;
+  font-style: italic;
+}
+
+.sub-section {
+  margin-bottom: 18px;
+}
+
+.sub-section:last-child {
+  margin-bottom: 0;
+}
+
+.sub-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3d4a57;
+  padding-left: 10px;
+  border-left: 3px solid #2e8b57;
+}
+
 .fields-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

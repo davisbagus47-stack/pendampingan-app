@@ -24,30 +24,41 @@ const getCredentials = () => {
 const tombol = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
 const buildRow = (body) => {
-  const pendampingan = Array.isArray(body.pendampingan)
-    ? body.pendampingan.map(tombol).join(', ')
-    : tombol(body.pendampingan);
-
   return [
-    tombol(body.namaTPK), tombol(body.rw), tombol(body.rt),
-    tombol(body.namaPosyandu), tombol(body.nik), tombol(body.noKK),
-    tombol(body.namaKK), tombol(body.namaIstri), tombol(body.namaSasaran),
-    tombol(body.jenisSasaran), tombol(body.jenisKelamin), tombol(body.tanggalLahir),
-    tombol(body.pekerjaan), tombol(body.keteranganPekerjaan), tombol(body.sumberAir),
-    tombol(body.jamban), tombol(body.terlalu), tombol(body.dtks),
-    tombol(body.resikoStunting), tombol(body.bpjsStatus), tombol(body.jenisBPJS),
-    tombol(body.bukanPesertaKB), tombol(body.jenisKB), tombol(body.rencanaKehamilan),
-    tombol(body.produkUsaha), pendampingan, tombol(body.bulanTahun),
-    tombol(body.hadirPosy), tombol(body.kunjunganRumah), tombol(body.resiko),
-    tombol(body.bb), tombol(body.tb), tombol(body.mms),
+    tombol(body.namaTPK), tombol(body.peranTPK), tombol(body.noHpTPK),
+    tombol(body.namaDesa), tombol(body.namaKecamatan), tombol(body.rw), tombol(body.rt),
+    tombol(body.nik), tombol(body.noKK), tombol(body.namaLengkap),
+    tombol(body.noHp), tombol(body.tanggalLahir), tombol(body.usia), tombol(body.alamat),
+    tombol(body.jenisSasaran),
+    tombol(body.sumberAir), tombol(body.jamban), tombol(body.terpaparRokok),
+    tombol(body.terlaluMuda), tombol(body.terlaluTua), tombol(body.terlaluDekat), tombol(body.terlaluBanyak),
+    tombol(body.gunakanKB), tombol(body.jenisKB), tombol(body.rencanaKB), tombol(body.rencanaKehamilan),
+    tombol(body.bpjsAktif), tombol(body.jenisBPJS), tombol(body.dtks),
+    tombol(body.bansosDiterima),
+    tombol(body.hpht), tombol(body.usiaKehamilan),
+    tombol(body.bbSebelumHamil), tombol(body.bbSekarang), tombol(body.tb),
+    tombol(body.lila), tombol(body.hb), tombol(body.tfu), tombol(body.tbj),
+    tombol(body.riwayatPenyakit), tombol(body.terimaTTD), tombol(body.aksesFaskes), tombol(body.hamilKembar),
+    tombol(body.tanggalLahirBayi), tombol(body.umurBayi), tombol(body.bbLahir), tombol(body.pbLahir),
+    tombol(body.cukupBulan), tombol(body.asiEksklusif), tombol(body.sudahImunisasi),
+    tombol(body.kak), tombol(body.stimulasi),
+    tombol(body.kiePenyuluhan), tombol(body.jenisKIE),
+    tombol(body.fasilitasiRujukan), tombol(body.rujukanKe), tombol(body.rujukanProses),
+    tombol(body.fasilitasiBansos), tombol(body.bansosProgram),
+    tombol(body.hadirPosyandu), tombol(body.teridentifikasiRisiko),
+    tombol(body.tanggalKunjungan), tombol(body.tanggalKunjunganBerikutnya),
+    tombol(body.catatanTPK),
   ];
 };
 
 const validate = (body) => {
   const errors = [];
   if (!tombol(body.namaTPK)) errors.push('namaTPK');
-  if (!tombol(body.namaSasaran)) errors.push('namaSasaran');
+  if (!tombol(body.peranTPK)) errors.push('peranTPK');
+  if (!tombol(body.namaDesa)) errors.push('namaDesa');
+  if (!tombol(body.namaLengkap)) errors.push('namaLengkap');
   if (!tombol(body.jenisSasaran)) errors.push('jenisSasaran');
+  if (!tombol(body.tanggalKunjungan)) errors.push('tanggalKunjungan');
   const nik = tombol(body.nik);
   if (!nik) errors.push('nik');
   else if (!/^\d{16}$/.test(nik)) errors.push('nik (harus 16 digit angka)');
