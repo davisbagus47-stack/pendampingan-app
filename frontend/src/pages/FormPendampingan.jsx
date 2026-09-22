@@ -13,8 +13,8 @@ const JENIS_SASARAN_OPTIONS = [
 ];
 
 const PERAN_TPK_OPTIONS = [
-  { value: 'Bidan', label: 'Bidan' },
-  { value: 'Kader PKK', label: 'Kader TP PKK' },
+  { value: 'Tenaga Kesehatan', label: 'Tenaga Kesehatan (Bidan / Nakes)' },
+  { value: 'PKK', label: 'PKK (Kader TP PKK)' },
   { value: 'Kader KB', label: 'Kader KB' },
 ];
 
@@ -46,6 +46,7 @@ const FORM_AWAL = {
   namaTPK: '',
   peranTPK: '',
   noHpTPK: '',
+  timTPK: '',
 
   namaDesa: '',
   namaKecamatan: '',
@@ -59,8 +60,10 @@ const FORM_AWAL = {
   tanggalLahir: '',
   usia: '',
   alamat: '',
+  jenisKelamin: '',
 
   jenisSasaran: '',
+  pendampinganKe: '',
 
   sumberAir: '',
   jamban: '',
@@ -124,6 +127,7 @@ const FORM_AWAL = {
 
   hadirPosyandu: '',
   teridentifikasiRisiko: '',
+  mbg3B: '',
   tanggalKunjungan: '',
 };
 
@@ -191,6 +195,7 @@ const FormPendampingan = () => {
       noHp: s.noHp || '',
       alamat: s.alamat || '',
       jenisSasaran: s.jenisSasaran || '',
+      jenisKelamin: s.jenisKelamin || '',
       namaDesa: s.namaDesa || '',
       namaKecamatan: s.namaKecamatan || '',
       rw: s.rw || '',
@@ -198,6 +203,9 @@ const FormPendampingan = () => {
       namaTPK: s.namaTPK || '',
       peranTPK: s.peranTPK || '',
       noHpTPK: s.noHpTPK || '',
+      timTPK: s.timTPK || '',
+      pendampinganKe: s.pendampinganKe || '',
+      mbg3B: s.mbg3B || '',
       sumberAir: s.sumberAir || '',
       jamban: s.jamban || '',
       terpaparRokok: s.terpaparRokok || '',
@@ -221,8 +229,10 @@ const FormPendampingan = () => {
     setFormData(prev => ({
       ...prev,
       nik: '', namaLengkap: '', noKK: '', tanggalLahir: '', usia: '', noHp: '', alamat: '',
+      jenisKelamin: '',
       jenisSasaran: '', namaDesa: '', namaKecamatan: '', rw: '', rt: '',
-      namaTPK: '', peranTPK: '', noHpTPK: '',
+      namaTPK: '', peranTPK: '', noHpTPK: '', timTPK: '',
+      pendampinganKe: '', mbg3B: '',
       sumberAir: '', jamban: '', terpaparRokok: '',
       gunakanKB: '', jenisKB: '', rencanaKB: '', rencanaKehamilan: '',
       bpjsAktif: '', jenisBPJS: '', dtks: '', bansosDiterima: '', bbSekarang: '', tb: '',
@@ -301,6 +311,9 @@ const FormPendampingan = () => {
               <Field label="No. HP Petugas">
                 <input name="noHpTPK" value={formData.noHpTPK} placeholder="08xxxxxxxxxx" inputMode="tel" onChange={handleChange} />
               </Field>
+              <Field label="Tim TPK">
+                <input name="timTPK" value={formData.timTPK} placeholder="Contoh: Tim 5" onChange={handleChange} />
+              </Field>
               <Field label="Desa / Kelurahan" required>
                 <input name="namaDesa" value={formData.namaDesa} placeholder="Nama desa/kelurahan" onChange={handleChange} />
               </Field>
@@ -363,6 +376,13 @@ const FormPendampingan = () => {
               </Field>
               <Field label="Nama Lengkap Sasaran" required>
                 <input name="namaLengkap" value={formData.namaLengkap} placeholder="Nama lengkap" onChange={handleChange} />
+              </Field>
+              <Field label="Jenis Kelamin">
+                <select name="jenisKelamin" value={formData.jenisKelamin} onChange={handleChange}>
+                  <option value="">-- Pilih --</option>
+                  <option value="Perempuan">Perempuan</option>
+                  <option value="Laki-laki">Laki-laki</option>
+                </select>
               </Field>
               <Field label="NIK" required>
                 <input name="nik" value={formData.nik} placeholder="16 digit NIK" maxLength={16} inputMode="numeric" onChange={handleChange} />
@@ -866,6 +886,13 @@ const FormPendampingan = () => {
                   <option value="Tidak">Tidak ada indikasi risiko</option>
                 </select>
               </Field>
+              <Field label="Sudah Menerima MBG 3B?">
+                <select name="mbg3B" value={formData.mbg3B} onChange={handleChange}>
+                  <option value="">-- Pilih --</option>
+                  <option value="Sudah">Sudah</option>
+                  <option value="Belum">Belum</option>
+                </select>
+              </Field>
             </div>
           </section>
 
@@ -875,6 +902,9 @@ const FormPendampingan = () => {
             <div className="fields-grid">
               <Field label="Tanggal Kunjungan" required>
                 <input type="date" name="tanggalKunjungan" value={formData.tanggalKunjungan} onChange={handleChange} />
+              </Field>
+              <Field label="Pendampingan Ke">
+                <input name="pendampinganKe" value={formData.pendampinganKe} placeholder="Contoh: 3" inputMode="numeric" onChange={handleChange} />
               </Field>
               <Field label="Catatan TPK (opsional)" full>
                 <input name="catatanTPK" value={formData.catatanTPK} placeholder="Catatan tambahan dari kunjungan ini" onChange={handleChange} />

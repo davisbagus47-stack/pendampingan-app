@@ -37,6 +37,7 @@ const FIELD_ORDER = [
   'fasilitasiBansos', 'bansosProgram',
   'hadirPosyandu', 'teridentifikasiRisiko',
   'tanggalKunjungan', 'catatanTPK',
+  'timTPK', 'pendampinganKe', 'jenisKelamin', 'mbg3B',
 ];
 
 const LABELS = {
@@ -62,6 +63,8 @@ const LABELS = {
   fasilitasiBansos: 'Fasilitasi Bansos', bansosProgram: 'Program Bansos',
   hadirPosyandu: 'Hadir Posyandu', teridentifikasiRisiko: 'Teridentifikasi Risiko',
   tanggalKunjungan: 'Tanggal Kunjungan', catatanTPK: 'Catatan TPK',
+  timTPK: 'Tim TPK', pendampinganKe: 'Pendampingan Ke', jenisKelamin: 'Jenis Kelamin',
+  mbg3B: 'Sudah Menerima MBG 3B',
 };
 
 const HEADERS = ['No', ...FIELD_ORDER.map(f => LABELS[f])];
@@ -109,10 +112,14 @@ const REF_FIELDS = {
   jenisSasaran: 'Sasaran',
   bbSekarang: 'BB',
   tb: 'TB',
+  jenisKelamin: 'JK',
   namaDesa: 'Desa',
   namaKecamatan: 'Kecamatan',
   namaTPK: 'Nama TPK',
   peranTPK: 'Unsur TPK',
+  timTPK: 'Tim TPK',
+  pendampinganKe: 'Pendampingan Ke',
+  mbg3B: 'Sudah Menerima MBG 3B',
 };
 
 const NORMALIZE_SASARAN = {
@@ -126,15 +133,6 @@ const NORMALIZE_SASARAN = {
   'baduta': 'Baduta',
   'baduta 0-23 bulan': 'Baduta',
   'bayi 0-23 bulan': 'Baduta',
-};
-
-const NORMALIZE_PERAN = {
-  'tenaga kesehatan': 'Bidan',
-  'bidan': 'Bidan',
-  'pkk': 'Kader PKK',
-  'kader pkk': 'Kader PKK',
-  'kader tp pkk': 'Kader PKK',
-  'kader kb': 'Kader KB',
 };
 
 const normalizeNik = (v) => {
@@ -205,11 +203,15 @@ const getSasaranFromRef = async () => {
       noHp: get(row, 'noHp'),
       alamat: get(row, 'alamat'),
       jenisSasaran: sasaran,
+      jenisKelamin: get(row, 'jenisKelamin'),
       namaDesa: get(row, 'namaDesa'),
       namaKecamatan: get(row, 'namaKecamatan'),
       namaTPK: get(row, 'namaTPK'),
-      peranTPK: NORMALIZE_PERAN[peran.toLowerCase()] || peran,
+      peranTPK: peran,
       noHpTPK: '',
+      timTPK: get(row, 'timTPK'),
+      pendampinganKe: get(row, 'pendampinganKe'),
+      mbg3B: get(row, 'mbg3B'),
       bbSekarang: angka(get(row, 'bbSekarang')),
       tb: angka(get(row, 'tb')),
     };

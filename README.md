@@ -161,8 +161,14 @@ Pertama kali dibuat untuk spreadsheet dengan header persis seperti di bawah (kel
 | Kecamatan | `Kecamatan` |
 | Nama Petugas TPK | `Nama TPK` |
 | Peran TPK | `Unsur TPK` |
+| Tim TPK | `Tim TPK` |
+| Pendampingan Ke | `Pendampingan Ke` |
+| Jenis Kelamin | `JK` |
+| Sudah Menerima MBG 3B | `Sudah Menerima MBG 3B` |
 
-Jika header sheet master berubah, sesuaikan pemetaan `REF_FIELDS` di `backend/index.js`.
+Nilai `Unsur TPK` diambil persis dari master (`Tenaga Kesehatan`, `PKK`, `Kader KB`) dan menjadi opsi dropdown "Peran/Jabatan dalam TPK" di form.
+
+Field baru `timTPK`, `pendampinganKe`, `jenisKelamin`, `mbg3B` ditaruh di ujung `FIELD_ORDER`, sehingga kolom lama di sheet submit tidak bergeser. Jika header sheet master berubah, sesuaikan pemetaan `REF_FIELDS` di `backend/index.js`.
 
 ## Lisensi
 
