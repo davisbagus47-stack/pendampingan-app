@@ -74,8 +74,10 @@ npm start              # berjalan di http://localhost:3000
 
 | Variable | Required | Deskripsi |
 |----------|----------|-----------|
-| `SHEET_ID` | Ya | ID Google Spreadsheet |
-| `SHEET_NAME` | Tidak | Nama tab sheet (default: `Sheet1`) |
+| `SHEET_ID` | Ya | ID Google Spreadsheet tempat data submit tersimpan |
+| `SHEET_NAME` | Tidak | Nama tab sheet submit (default: `Sheet1`) |
+| `REF_SHEET_ID` | Tidak | ID spreadsheet master (read-only) untuk pencarian sasaran & data TPK. Jika diisi, `GET /api/sasaran` membaca dari sini (bukan dari sheet submit) |
+| `REF_SHEET_NAME` | Tidak | Nama tab spreadsheet master (default: `Form Responses 1`) |
 | `GOOGLE_CREDENTIALS_JSON` | Tidak* | JSON service account dalam satu baris. Jika kosong, fallback ke `service_account.json` |
 | `CORS_ORIGIN` | Tidak | Origin yang diizinkan CORS (default: `*`) |
 | `PORT` | Tidak | Port server (default: `3001`) |
@@ -103,7 +105,30 @@ Aplikasi ini di-deploy sebagai **2 project Vercel terpisah**:
 1. **Backend** — Express server sebagai Vercel serverless function
 2. **Frontend** — Static build React
 
-Pastikan `GOOGLE_CREDENTIALS_JSON` dan `SHEET_ID` diatur sebagai environment variable di dashboard Vercel.
+Pastikan `GOOGLE_CREDENTIALS_JSON`, `SHEET_ID`, `REF_SHEET_ID`, dan `REF_SHEET_NAME` diatur sebagai environment variable di dashboard Vercel.
+
+### Kolom yang dibaca dari sheet master (read-only)
+
+Pertama kali dibuat untuk spreadsheet dengan header persis seperti di bawah (keluaran Google Form). Kolom lain diabaikan:
+
+| Field form | Judul kolom di sheet master |
+|-----------|------------------------------|
+| NIK | `NIK Sasaran` |
+| No. KK | `NIK KK` |
+| Nama Lengkap | `Nama Sasaran` |
+| Tanggal Lahir | `Tanggal Lahir` |
+| Usia (tahun) | `Umur` (+ `Satuan Umur`) |
+| No. HP | `No HP` |
+| Alamat | `Alamat` |
+| Jenis Sasaran | `Sasaran` |
+| BB Sekarang | `BB` |
+| TB | `TB` |
+| Desa | `Desa` |
+| Kecamatan | `Kecamatan` |
+| Nama Petugas TPK | `Nama TPK` |
+| Peran TPK | `Unsur TPK` |
+
+Jika header sheet master berubah, sesuaikan pemetaan `REF_FIELDS` di `backend/index.js`.
 
 ## Lisensi
 

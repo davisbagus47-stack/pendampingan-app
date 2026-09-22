@@ -18,34 +18,230 @@ const getCredentials = () => {
 
 const tombol = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
-const buildRow = (body) => {
-  return [
-    tombol(body.namaTPK), tombol(body.peranTPK), tombol(body.noHpTPK),
-    tombol(body.namaDesa), tombol(body.namaKecamatan), tombol(body.rw), tombol(body.rt),
-    tombol(body.nik), tombol(body.noKK), tombol(body.namaLengkap),
-    tombol(body.noHp), tombol(body.tanggalLahir), tombol(body.usia), tombol(body.alamat),
-    tombol(body.jenisSasaran),
-    tombol(body.sumberAir), tombol(body.jamban), tombol(body.terpaparRokok),
-    tombol(body.terlaluMuda), tombol(body.terlaluTua), tombol(body.terlaluDekat), tombol(body.terlaluBanyak),
-    tombol(body.gunakanKB), tombol(body.jenisKB), tombol(body.rencanaKB), tombol(body.rencanaKehamilan),
-    tombol(body.bpjsAktif), tombol(body.jenisBPJS), tombol(body.dtks),
-    tombol(body.bansosDiterima),
-    tombol(body.hpht), tombol(body.usiaKehamilan),
-    tombol(body.bbSebelumHamil), tombol(body.bbSekarang), tombol(body.tb),
-    tombol(body.lila), tombol(body.hb), tombol(body.tfu), tombol(body.tbj),
-    tombol(body.riwayatPenyakit), tombol(body.terimaTTD), tombol(body.aksesFaskes), tombol(body.hamilKembar),
-    tombol(body.tanggalLahirBayi), tombol(body.umurBayi), tombol(body.bbLahir), tombol(body.pbLahir),
-    tombol(body.cukupBulan), tombol(body.asiEksklusif), tombol(body.sudahImunisasi),
-    tombol(body.kak), tombol(body.stimulasi),
-    tombol(body.namaAyah), tombol(body.nikAyah), tombol(body.namaIbu), tombol(body.nikIbu),
-    tombol(body.tanggalLahirIbu),
-    tombol(body.kiePenyuluhan), tombol(body.jenisKIE),
-    tombol(body.fasilitasiRujukan), tombol(body.rujukanKe), tombol(body.rujukanProses),
-    tombol(body.fasilitasiBansos), tombol(body.bansosProgram),
-    tombol(body.hadirPosyandu), tombol(body.teridentifikasiRisiko),
-    tombol(body.tanggalKunjungan),
-    tombol(body.catatanTPK),
-  ];
+// Urutan field yang disimpan ke Google Sheets (kolom B sampai akhir, kolom A = No)
+const FIELD_ORDER = [
+  'namaTPK', 'peranTPK', 'noHpTPK',
+  'namaDesa', 'namaKecamatan', 'rw', 'rt',
+  'nik', 'noKK', 'namaLengkap', 'noHp', 'tanggalLahir', 'usia', 'alamat',
+  'jenisSasaran',
+  'sumberAir', 'jamban', 'terpaparRokok',
+  'terlaluMuda', 'terlaluTua', 'terlaluDekat', 'terlaluBanyak',
+  'gunakanKB', 'jenisKB', 'rencanaKB', 'rencanaKehamilan',
+  'bpjsAktif', 'jenisBPJS', 'dtks', 'bansosDiterima',
+  'hpht', 'usiaKehamilan', 'bbSebelumHamil', 'bbSekarang', 'tb', 'lila', 'hb', 'tfu', 'tbj',
+  'riwayatPenyakit', 'terimaTTD', 'aksesFaskes', 'hamilKembar',
+  'tanggalLahirBayi', 'umurBayi', 'bbLahir', 'pbLahir', 'cukupBulan', 'asiEksklusif', 'sudahImunisasi', 'kak', 'stimulasi',
+  'namaAyah', 'nikAyah', 'namaIbu', 'nikIbu', 'tanggalLahirIbu',
+  'kiePenyuluhan', 'jenisKIE',
+  'fasilitasiRujukan', 'rujukanKe', 'rujukanProses',
+  'fasilitasiBansos', 'bansosProgram',
+  'hadirPosyandu', 'teridentifikasiRisiko',
+  'tanggalKunjungan', 'catatanTPK',
+];
+
+const LABELS = {
+  namaTPK: 'Nama Petugas TPK', peranTPK: 'Peran dalam TPK', noHpTPK: 'No. HP Petugas',
+  namaDesa: 'Desa/Kelurahan', namaKecamatan: 'Kecamatan', rw: 'RW', rt: 'RT',
+  nik: 'NIK', noKK: 'No. KK', namaLengkap: 'Nama Lengkap', noHp: 'No. HP/WA',
+  tanggalLahir: 'Tanggal Lahir', usia: 'Usia (tahun)', alamat: 'Alamat',
+  jenisSasaran: 'Jenis Sasaran',
+  sumberAir: 'Akses Air Minum', jamban: 'Fasilitas BAB (Jamban)', terpaparRokok: 'Terpapar Rokok',
+  terlaluMuda: 'Terlalu Muda', terlaluTua: 'Terlalu Tua', terlaluDekat: 'Terlalu Dekat', terlaluBanyak: 'Terlalu Banyak',
+  gunakanKB: 'Status KB', jenisKB: 'Jenis/Alat KB', rencanaKB: 'Rencana KB (Catin)', rencanaKehamilan: 'Rencana Kehamilan (Catin)',
+  bpjsAktif: 'BPJS Aktif', jenisBPJS: 'Jenis BPJS', dtks: 'Terdaftar DTKS', bansosDiterima: 'Bansos Diterima',
+  hpht: 'HPHT', usiaKehamilan: 'Usia Kehamilan (minggu)', bbSebelumHamil: 'BB Sebelum Hamil (kg)',
+  bbSekarang: 'BB Sekarang (kg)', tb: 'Tinggi Badan (cm)', lila: 'LILA (cm)', hb: 'Hb (g/dl)',
+  tfu: 'TFU (cm)', tbj: 'TBJ (gram)', riwayatPenyakit: 'Riwayat Penyakit', terimaTTD: 'Terima TTD',
+  aksesFaskes: 'Akses Faskes', hamilKembar: 'Hamil Kembar',
+  tanggalLahirBayi: 'Tanggal Melahirkan', umurBayi: 'Umur Bayi saat Lahir (minggu)',
+  bbLahir: 'BB Lahir (kg)', pbLahir: 'PB Lahir (cm)', cukupBulan: 'Cukup Bulan',
+  asiEksklusif: 'ASI Eksklusif', sudahImunisasi: 'Imunisasi Rutin', kak: 'Isi KAK', stimulasi: 'Perkembangan Anak',
+  namaAyah: 'Nama Ayah', nikAyah: 'NIK Ayah', namaIbu: 'Nama Ibu', nikIbu: 'NIK Ibu', tanggalLahirIbu: 'Tanggal Lahir Ibu',
+  kiePenyuluhan: 'KIE Penyuluhan', jenisKIE: 'Jenis KIE',
+  fasilitasiRujukan: 'Fasilitasi Rujukan', rujukanKe: 'Rujukan Ke', rujukanProses: 'Status Rujukan',
+  fasilitasiBansos: 'Fasilitasi Bansos', bansosProgram: 'Program Bansos',
+  hadirPosyandu: 'Hadir Posyandu', teridentifikasiRisiko: 'Teridentifikasi Risiko',
+  tanggalKunjungan: 'Tanggal Kunjungan', catatanTPK: 'Catatan TPK',
+};
+
+const HEADERS = ['No', ...FIELD_ORDER.map(f => LABELS[f])];
+
+const buildRow = (body) => FIELD_ORDER.map(f => tombol(body[f]));
+
+const SHEET_NAME = () => process.env.SHEET_NAME || 'Sheet1';
+const SHEET_ID = () => process.env.SHEET_ID;
+
+// Kolom terakhir dari HEADERS (contoh: 69 kolom → "BQ")
+const lastColumn = (len) => {
+  let col = '';
+  let n = len;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    col = String.fromCharCode(65 + rem) + col;
+    n = Math.floor((n - 1) / 26);
+  }
+  return col;
+};
+
+const getSheets = async () => {
+  const auth = new google.auth.GoogleAuth({
+    credentials: getCredentials(),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  const client = await auth.getClient();
+  return google.sheets({ version: 'v4', auth: client });
+};
+
+// ===== Baca daftar sasaran dari spreadsheet master (read-only) =====
+const REF_SHEET_ID = () => process.env.REF_SHEET_ID;
+const REF_SHEET_NAME = () => process.env.REF_SHEET_NAME || 'Form Responses 1';
+
+// Pemetaan: field form app -> judul kolom di spreadsheet master
+const REF_FIELDS = {
+  nik: 'NIK Sasaran',
+  noKK: 'NIK KK',
+  namaLengkap: 'Nama Sasaran',
+  tanggalLahir: 'Tanggal Lahir',
+  usia: 'Umur',
+  satuanUsia: 'Satuan Umur',
+  noHp: 'No HP',
+  alamat: 'Alamat',
+  jenisSasaran: 'Sasaran',
+  bbSekarang: 'BB',
+  tb: 'TB',
+  namaDesa: 'Desa',
+  namaKecamatan: 'Kecamatan',
+  namaTPK: 'Nama TPK',
+  peranTPK: 'Unsur TPK',
+};
+
+const NORMALIZE_SASARAN = {
+  'calon pengantin': 'Catin',
+  'calon pengantin / calon pus': 'Catin',
+  'catin': 'Catin',
+  'ibu hamil': 'Ibu Hamil',
+  'hamil': 'Ibu Hamil',
+  'ibu nifas': 'Ibu Nifas',
+  'nifas': 'Ibu Nifas',
+  'baduta': 'Baduta',
+  'baduta 0-23 bulan': 'Baduta',
+  'bayi 0-23 bulan': 'Baduta',
+};
+
+const NORMALIZE_PERAN = {
+  'tenaga kesehatan': 'Bidan',
+  'bidan': 'Bidan',
+  'pkk': 'Kader PKK',
+  'kader pkk': 'Kader PKK',
+  'kader tp pkk': 'Kader PKK',
+  'kader kb': 'Kader KB',
+};
+
+const normalizeNik = (v) => {
+  const s = String(v || '').trim().replace(/\s+/g, '');
+  if (s.indexOf('E') > -1) return ''; // nilai numerik ilmiah -> tidak bisa dipastikan, lewati
+  return s.replace(/\D/g, '');
+};
+
+const getRefSheets = async () => {
+  const auth = new google.auth.GoogleAuth({
+    credentials: getCredentials(),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  });
+  const client = await auth.getClient();
+  return google.sheets({ version: 'v4', auth: client });
+};
+
+const getSasaranFromRef = async () => {
+  const sheets = await getRefSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: REF_SHEET_ID(),
+    range: `'${REF_SHEET_NAME()}'!A1:ZZ`,
+  });
+
+  const all = res.data.values || [];
+  if (all.length === 0) return [];
+
+  const header = all[0].map(h => String(h || '').trim());
+  const colIndex = {};
+  Object.entries(REF_FIELDS).forEach(([field, label]) => {
+    const i = header.indexOf(label);
+    if (i > -1) colIndex[field] = i;
+  });
+
+  const get = (row, field) => {
+    const i = colIndex[field];
+    return i !== undefined && row[i] !== undefined ? String(row[i]).trim() : '';
+  };
+
+  const sasaranMap = {};
+  for (const row of all.slice(1)) {
+    const nik = normalizeNik(get(row, 'nik'));
+    if (nik.length !== 16) continue;
+
+    // Ubah satuan umur (bulan/minggu/hari) jadi tahun bila dipakai
+    let usia = get(row, 'usia');
+    const satuan = get(row, 'satuanUsia').toLowerCase();
+    const angkaUsia = parseFloat(usia);
+    if (satuan && angkaUsia > 0) {
+      if (satuan.indexOf('bulan') > -1 || satuan.indexOf('minggu') > -1) {
+        usia = String(Math.max(1, Math.round(angkaUsia / 12)));
+      } else if (satuan.indexOf('hari') > -1) {
+        usia = String(Math.max(1, Math.round(angkaUsia / 365)));
+      }
+    }
+
+    const jenisSasaran = get(row, 'jenisSasaran');
+    const sasaran = NORMALIZE_SASARAN[jenisSasaran.toLowerCase()] || jenisSasaran;
+    const peran = get(row, 'peranTPK');
+    const angka = (v) => v ? String(v).replace(',', '.').trim() : ''; // dukungan angka "70,00"
+
+    sasaranMap[nik] = {
+      nik,
+      namaLengkap: get(row, 'namaLengkap'),
+      noKK: get(row, 'noKK'),
+      tanggalLahir: get(row, 'tanggalLahir'),
+      usia,
+      noHp: get(row, 'noHp'),
+      alamat: get(row, 'alamat'),
+      jenisSasaran: sasaran,
+      namaDesa: get(row, 'namaDesa'),
+      namaKecamatan: get(row, 'namaKecamatan'),
+      namaTPK: get(row, 'namaTPK'),
+      peranTPK: NORMALIZE_PERAN[peran.toLowerCase()] || peran,
+      noHpTPK: '',
+      bbSekarang: angka(get(row, 'bbSekarang')),
+      tb: angka(get(row, 'tb')),
+    };
+  }
+  return Object.values(sasaranMap);
+};
+
+// Tulis baris header bila belum ada (baris pertama masih kosong)
+const ensureHeaders = async (sheets) => {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID(),
+    range: `${SHEET_NAME()}!A1`,
+  });
+  const first = res.data.values && res.data.values[0] ? res.data.values[0][0] : '';
+  if (first !== undefined && first !== null && String(first).trim() !== '') return;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID(),
+    range: `${SHEET_NAME()}!A1`,
+    valueInputOption: 'RAW',
+    resource: { values: [HEADERS] },
+  });
+};
+
+// Nomor urut berikutnya berdasarkan isi kolom A (data), header di baris 1 diabaikan
+const nextNumber = async (sheets) => {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID(),
+    range: `${SHEET_NAME()}!A2:A`,
+  });
+  const vals = res.data.values || [];
+  const count = vals.filter(r => r && r[0] !== undefined && String(r[0]).trim() !== '').length;
+  return count + 1;
 };
 
 const validate = (body) => {
@@ -63,63 +259,65 @@ const validate = (body) => {
 };
 
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', service: 'Backend Pendampingan Keluarga TPK', endpoint: 'POST /api/submit' });
+  res.json({ status: 'ok', service: 'Backend Pendampingan Keluarga TPK', endpoints: ['POST /api/submit', 'GET /api/sasaran'] });
 });
 
 app.get('/api/sasaran', async (req, res) => {
   try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: getCredentials(),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-    const client = await auth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
+    let sasaranList;
+    if (process.env.REF_SHEET_ID) {
+      // Sumber utama: spreadsheet master (read-only)
+      sasaranList = await getSasaranFromRef();
+    } else {
+      // Fallback: baca dari spreadsheet submit sendiri (perilaku lama)
+      const sheets = await getSheets();
+      const result = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID(),
+        range: `${SHEET_NAME()}!A2:${lastColumn(HEADERS.length)}`,
+      });
 
-    const result = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SHEET_ID,
-      range: `${process.env.SHEET_NAME || 'Sheet1'}!A2:BM`,
-    });
+      const rows = result.data.values || [];
+      const sasaranMap = {};
 
-    const rows = result.data.values || [];
-    const sasaranMap = {};
+      for (const row of rows) {
+        const nik = row[8] || '';
+        if (!nik || nik.length !== 16) continue;
 
-    for (const row of rows) {
-      const nik = row[7] || '';
-      if (!nik || nik.length !== 16) continue;
-
-      if (!sasaranMap[nik]) {
-        sasaranMap[nik] = {
-          nik,
-          namaLengkap: row[9] || '',
-          noKK: row[8] || '',
-          tanggalLahir: row[11] || '',
-          usia: row[12] || '',
-          noHp: row[10] || '',
-          alamat: row[13] || '',
-          jenisSasaran: row[14] || '',
-          namaDesa: row[3] || '',
-          namaKecamatan: row[4] || '',
-          rw: row[5] || '',
-          rt: row[6] || '',
-          namaTPK: row[0] || '',
-          peranTPK: row[1] || '',
-          noHpTPK: row[2] || '',
-          sumberAir: row[15] || '',
-          jamban: row[16] || '',
-          terpaparRokok: row[17] || '',
-          gunakanKB: row[22] || '',
-          jenisKB: row[23] || '',
-          rencanaKB: row[24] || '',
-          rencanaKehamilan: row[25] || '',
-          bpjsAktif: row[26] || '',
-          jenisBPJS: row[27] || '',
-          dtks: row[28] || '',
-          bansosDiterima: row[29] || '',
-        };
+        if (!sasaranMap[nik]) {
+          sasaranMap[nik] = {
+            nik,
+            namaLengkap: row[10] || '',
+            noKK: row[9] || '',
+            tanggalLahir: row[12] || '',
+            usia: row[13] || '',
+            noHp: row[11] || '',
+            alamat: row[14] || '',
+            jenisSasaran: row[15] || '',
+            namaDesa: row[4] || '',
+            namaKecamatan: row[5] || '',
+            rw: row[6] || '',
+            rt: row[7] || '',
+            namaTPK: row[1] || '',
+            peranTPK: row[2] || '',
+            noHpTPK: row[3] || '',
+            sumberAir: row[16] || '',
+            jamban: row[17] || '',
+            terpaparRokok: row[18] || '',
+            gunakanKB: row[23] || '',
+            jenisKB: row[24] || '',
+            rencanaKB: row[25] || '',
+            rencanaKehamilan: row[26] || '',
+            bpjsAktif: row[27] || '',
+            jenisBPJS: row[28] || '',
+            dtks: row[29] || '',
+            bansosDiterima: row[30] || '',
+          };
+        }
       }
+
+      sasaranList = Object.values(sasaranMap);
     }
 
-    const sasaranList = Object.values(sasaranMap);
     res.status(200).json({ success: true, data: sasaranList });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Gagal mengambil data sasaran:`, error.message);
@@ -135,18 +333,15 @@ app.post('/api/submit', async (req, res) => {
       return res.status(400).json({ success: false, message: `Data tidak lengkap atau tidak valid: ${errors.join(', ')}`, errors });
     }
 
-    const auth = new google.auth.GoogleAuth({
-      credentials: getCredentials(),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-    const client = await auth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
+    const sheets = await getSheets();
+    await ensureHeaders(sheets);
+    const no = await nextNumber(sheets);
 
     const result = await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.SHEET_ID,
-      range: `${process.env.SHEET_NAME || 'Sheet1'}!A1`,
-      valueInputOption: 'USER_ENTERED',
-      resource: { values: [buildRow(body)] },
+      spreadsheetId: SHEET_ID(),
+      range: `${SHEET_NAME()}!A1`,
+      valueInputOption: 'RAW',
+      resource: { values: [[no, ...buildRow(body)]] },
     });
 
     res.status(200).json({

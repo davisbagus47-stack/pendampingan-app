@@ -9,6 +9,7 @@ const JENIS_SASARAN_OPTIONS = [
   { value: 'Ibu Hamil', label: 'Ibu Hamil' },
   { value: 'Ibu Nifas', label: 'Ibu Nifas / Pasca Persalinan' },
   { value: 'Baduta', label: 'Baduta 0-23 Bulan' },
+  { value: 'Balita', label: 'Balita 24-59 Bulan' },
 ];
 
 const PERAN_TPK_OPTIONS = [
@@ -208,6 +209,8 @@ const FormPendampingan = () => {
       jenisBPJS: s.jenisBPJS || '',
       dtks: s.dtks || '',
       bansosDiterima: s.bansosDiterima || '',
+      bbSekarang: s.bbSekarang || '',
+      tb: s.tb || '',
     }));
     setSearchQuery('');
     setSearchResults([]);
@@ -222,7 +225,7 @@ const FormPendampingan = () => {
       namaTPK: '', peranTPK: '', noHpTPK: '',
       sumberAir: '', jamban: '', terpaparRokok: '',
       gunakanKB: '', jenisKB: '', rencanaKB: '', rencanaKehamilan: '',
-      bpjsAktif: '', jenisBPJS: '', dtks: '', bansosDiterima: '',
+      bpjsAktif: '', jenisBPJS: '', dtks: '', bansosDiterima: '', bbSekarang: '', tb: '',
     }));
   };
 
