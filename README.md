@@ -105,7 +105,41 @@ Aplikasi ini di-deploy sebagai **2 project Vercel terpisah**:
 1. **Backend** — Express server sebagai Vercel serverless function
 2. **Frontend** — Static build React
 
-Pastikan `GOOGLE_CREDENTIALS_JSON`, `SHEET_ID`, `REF_SHEET_ID`, dan `REF_SHEET_NAME` diatur sebagai environment variable di dashboard Vercel.
+### Backend (folder `backend/`)
+
+Sudah ada `backend/api/index.js` (delegasi `index.js` sebagai serverless function) dan `backend/vercel.json` (rewrite semua rute ke fungsi tersebut). Project Vercel untuk backend cukup:
+
+- **Framework Preset:** Other
+- **Build:** tidak ada (default)
+- **Output:** tidak ada (default)
+
+Setelah connect repo ke Vercel, atur environment variable di dashboard:
+
+| Variable | Deskripsi |
+|----------|-----------|
+| `GOOGLE_CREDENTIALS_JSON` | Wajib. JSON service account satu baris (jalankan `node print_creds.js` lokal). File `service_account.json` tidak ikut ter-deploy karena di-ignore git |
+| `SHEET_ID` | ID spreadsheet tempat data submit |
+| `REF_SHEET_ID` | ID spreadsheet master (read-only) untuk pencarian sasaran |
+| `REF_SHEET_NAME` | Nama tab sheet master (default: `Form Responses 1`) |
+| `CORS_ORIGIN` | Opsional, origin yang diizinkan CORS |
+
+### Frontend (folder `frontend/`)
+
+Project Vercel untuk frontend cukup:
+
+- **Framework Preset:** Create React App (auto-detect)
+- **Build Command:** `npm run build`
+- **Output Directory:** `build`
+
+Environment variable wajib di-build time:
+
+| Variable | Deskripsi |
+|----------|-----------|
+| `REACT_APP_API_URL` | URL backend Vercel (mis. `https://backend-xxx.vercel.app`) |
+
+### Alur auto-deploy
+
+Setelah 2 project terhubung ke repo dan env diatur, setiap `git push` ke `main` otomatis mem-build & deploy tanpa perlu menyentuh dashboard Vercel. Nilai rahasia (`GOOGLE_CREDENTIALS_JSON`, `SHEET_ID`, `REF_SHEET_ID`, `REF_SHEET_NAME`) tidak pernah disimpan di GitHub — hanya di dashboard Vercel.
 
 ### Kolom yang dibaca dari sheet master (read-only)
 
