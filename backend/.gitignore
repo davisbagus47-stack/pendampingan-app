@@ -3,3 +3,8 @@ node_modules/
 service_account.json
 npm-debug.log*
 print_creds.js
+
+# ZKP (F4.4): perkakas dan artefak besar/dibangkitkan, bukan sumber.
+zkp/bin/
+zkp/ptau/
+zkp/build/

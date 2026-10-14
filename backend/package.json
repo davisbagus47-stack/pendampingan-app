@@ -14,8 +14,13 @@
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "google-spreadsheet": "^4.1.4",
-    "googleapis": "^148.0.0"
+    "googleapis": "^148.0.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "libpg-query": "^18.1.5"
   }
 }

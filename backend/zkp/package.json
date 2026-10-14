@@ -1,0 +1,19 @@
+{
+  "name": "zkp-poc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Prototipe T2 (ZKP) atas log audit tersembunyi -- F4.4",
+  "scripts": {
+    "setup": "node src/cli.js setup",
+    "compile": "node src/cli.js compile",
+    "prove": "node src/cli.js prove",
+    "verify": "node src/cli.js verify",
+    "demo": "node src/cli.js demo",
+    "test": "node test-zkp.js"
+  },
+  "dependencies": {
+    "circomlib": "2.0.5",
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "0.7.6"
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "_catatan": "record_hash = SHA-256(UTF8(JCS(normalize(payload)))).\nNormalisasi: semua nilai jadi string, string di-trim, field numerik jadi satu\nrepresentasi, null tetap null, kunci undefined dibuang, NIK/RW/RT tidak pernah\njadi angka.\nJangan edit angka di sini. Naikkan schema_version dulu bila algoritma berubah.",
+  "schema_version": 1,
+  "vectors": [
+    {
+      "name": "payload kosong",
+      "payload": {},
+      "record_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "name": "Catin lengkap",
+      "payload": {
+        "jenisSasaran": "Catin",
+        "nik": "3273011234560001",
+        "namaLengkap": "Siti Aminah",
+        "namaDesa": "Sukamaju",
+        "tanggalKunjungan": "2026-09-29"
+      },
+      "record_hash": "d4977f7ed50cbdcd7d941dc81cea0711a7cb0ce41b3bfbd2f91aba74a8ccc434"
+    },
+    {
+      "name": "Ibu Hamil;kolom pengukuran",
+      "payload": {
+        "jenisSasaran": "Ibu Hamil",
+        "nik": "3273011234560002",
+        "namaLengkap": "Dewi Lestari",
+        "usia": "28",
+        "usiaKehamilan": "24",
+        "hpht": "2025-11-02",
+        "bbSebelumHamil": "55",
+        "bbSekarang": "62,5",
+        "tfu": "24"
+      },
+      "record_hash": "175681ae41d8db2d8d7fb670f28f89c10e943119d18a7619f414a7da97672feb"
+    },
+    {
+      "name": "numerik ejaan koma;70,00",
+      "payload": {
+        "bbSekarang": "70,00"
+      },
+      "record_hash": "faf0d3ea9edf48545abf434dd86731144fe250502a58a0b4ea89c2ea893faeeb"
+    },
+    {
+      "name": "numerik ejaan titik;70.0",
+      "payload": {
+        "bbSekarang": "70.0"
+      },
+      "record_hash": "faf0d3ea9edf48545abf434dd86731144fe250502a58a0b4ea89c2ea893faeeb"
+    },
+    {
+      "name": "numerik ejaan ringkas;70",
+      "payload": {
+        "bbSekarang": "70"
+      },
+      "record_hash": "faf0d3ea9edf48545abf434dd86731144fe250502a58a0b4ea89c2ea893faeeb"
+    },
+    {
+      "name": "NIK nol di depan;...890",
+      "payload": {
+        "nik": "0071234567890"
+      },
+      "record_hash": "c09c1d11f3ff17cf98c92d2817b556b29615a234a0cb2d8ada3a72a67d12a77f"
+    },
+    {
+      "name": "NIK nol di depan;...891",
+      "payload": {
+        "nik": "0071234567891"
+      },
+      "record_hash": "b08e71a8c1a9867e4f76d9859020fe6a48ce4c5159d3b146b57bac8cd96cb8bf"
+    },
+    {
+      "name": "null pada field",
+      "payload": {
+        "namaAyah": null
+      },
+      "record_hash": "0e94e6ca818a392116e839719a569fdabfa97d01ec9a32441430638ccb88aa6b"
+    },
+    {
+      "name": "string kosong pada field",
+      "payload": {
+        "namaAyah": ""
+      },
+      "record_hash": "1a5d99f610bf13133714fe356b0fd9c65215d3d32e678db700152a911fac5a02"
+    },
+    {
+      "name": "string dengan spasi luar",
+      "payload": {
+        "namaLengkap": "  Jakarta  "
+      },
+      "record_hash": "89f7a8ea84e66b7957a9c90b5961c1215fa075cfbc8f32a5f58168ec1ca5983c"
+    },
+    {
+      "name": "string tanpa spasi luar",
+      "payload": {
+        "namaLengkap": "Jakarta"
+      },
+      "record_hash": "89f7a8ea84e66b7957a9c90b5961c1215fa075cfbc8f32a5f58168ec1ca5983c"
+    },
+    {
+      "name": "dua field lintas section",
+      "payload": {
+        "terpaparRokok": "Ya",
+        "catatanTPK": "Perlu kunjungan ulang"
+      },
+      "record_hash": "4de022cd0eeb966cf277653278b170409f7b276b109e6c149a7690337cb9454c"
+    },
+    {
+      "name": "nilai unicode",
+      "payload": {
+        "namaLengkap": "Siti Aminah"
+      },
+      "record_hash": "14dd7ca41506e584b1ef031b2fa7007738f2330084458c8186757f85457c4820"
+    },
+    {
+      "name": "nilai bertanda baca",
+      "payload": {
+        "alamat": "Jl. Merdeka No. 3 RT 04/05"
+      },
+      "record_hash": "583024a54fc551d7ca5010bf55eda66fda2e0037acdabff12a35a282e0755b74"
+    },
+    {
+      "name": "RW alphanumeric",
+      "payload": {
+        "rw": "0A",
+        "rt": "005"
+      },
+      "record_hash": "8efeb05c6caa93b467fc450d27b2947891f072fdfab3c93a6a8adf628db93439"
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "algorithm": "sha256-sorted-pairs-v1",
+  "note": "Dihasilkan oleh tools/merkle_reference.py (Python, implementasi terpisah).",
+  "leafInputs": [
+    "entry-0001",
+    "entry-0002",
+    "entry-0003",
+    "entry-0004",
+    "entry-0005",
+    "entry-0006",
+    "entry-0007",
+    "entry-0008",
+    "entry-0009",
+    "entry-0010",
+    "entry-0011",
+    "entry-0012",
+    "entry-0013",
+    "entry-0014",
+    "entry-0015",
+    "entry-0016",
+    "entry-0017",
+    "entry-0018",
+    "entry-0019",
+    "entry-0020"
+  ],
+  "roots": [
+    {
+      "n": 1,
+      "root": "a585b33cdfcb582537e18878c7c2ced53d42c1b2176a33e4e349c5d45576dc88"
+    },
+    {
+      "n": 2,
+      "root": "9b562c8eb0783905b67e07bff092db4d7a5ded7f20f8d4cc45608d55cfa1dab5"
+    },
+    {
+      "n": 3,
+      "root": "3b7dc5d989972b10e131ccce70fa04e492b1b9eeaff219ffb680105d88aa5368"
+    },
+    {
+      "n": 4,
+      "root": "df08f0dcb4668f55227d7936114443c78e8beda5bc69a518b359ce9af1b62500"
+    },
+    {
+      "n": 5,
+      "root": "c121019de1d853477dcc401273c28d27b264c98bf646456e11015211a4b187ba"
+    },
+    {
+      "n": 7,
+      "root": "ebfd7dde768623f98aa4f242c91210ad8658f8904637970ea189217cf234f2ea"
+    },
+    {
+      "n": 8,
+      "root": "3f47c45edab0b003ef96b381c4e8635fcc69085d245254355573eea3b5bef6bb"
+    },
+    {
+      "n": 9,
+      "root": "a686108d3c8e4fab7801ccc8705bd8d621a1b8255a72b7cd367d2d762d5ce234"
+    },
+    {
+      "n": 15,
+      "root": "c562fc3e26b516a8bef0e18ada9eb70dde8be4e8004bf6d37e657f15ed088241"
+    },
+    {
+      "n": 16,
+      "root": "04018f23847f9c87294e2edcf6d120fdfef75e1f541fa0d2a1673f4521015f76"
+    },
+    {
+      "n": 17,
+      "root": "7c5ec627131f3eea29bd93c3beb85d6420ae0e4515112896dab01f0e752495ae"
+    },
+    {
+      "n": 20,
+      "root": "a6e2573b87613b2782016153128639de840ebb4014ccd46984fcd949d56877ec"
+    }
+  ],
+  "proofs": [
+    {
+      "n": 5,
+      "index": 3,
+      "leaf": "8bae8be9de18b0e80fd41f0d4cc0738dd2ad2196e05bf5b541ae2c14413fb036",
+      "root": "c121019de1d853477dcc401273c28d27b264c98bf646456e11015211a4b187ba",
+      "proof": [
+        "488fd858d693d716f8458ca2091fafc1a79d1cab4c6cf893214b1094eae19ade",
+        "9b562c8eb0783905b67e07bff092db4d7a5ded7f20f8d4cc45608d55cfa1dab5",
+        "99db38dd9b75bb5a96d2524786ca60b2c7d914d03d7e9b18d60ae1bbaf02ea3f"
+      ]
+    },
+    {
+      "n": 8,
+      "index": 0,
+      "leaf": "a585b33cdfcb582537e18878c7c2ced53d42c1b2176a33e4e349c5d45576dc88",
+      "root": "3f47c45edab0b003ef96b381c4e8635fcc69085d245254355573eea3b5bef6bb",
+      "proof": [
+        "c8c2e49157093e20d0645322bc149359de3ef7b07be06e295361ffd3d828cf7f",
+        "72a8cd618f1b2815f181f44a1268581ba0cd48b4f3dd3966e1b645856e439e92",
+        "d16a318d5052b232281293142d122e1d73eb8773dc0d498a398f66f20bc824f8"
+      ]
+    },
+    {
+      "n": 8,
+      "index": 7,
+      "leaf": "0d563fa6be11ec9eb34cf3ed2b7f74a7a577140b85d8e90cf9a49f3e382cc51e",
+      "root": "3f47c45edab0b003ef96b381c4e8635fcc69085d245254355573eea3b5bef6bb",
+      "proof": [
+        "68a2bcf8589eced6fb82982924407cb1c201fe55fdeb7228a3c0752cdda95ff7",
+        "c050c8ed90d42fc6a0f351a05727d0a2c64beb704b5a345800b35a0fd57f27f9",
+        "df08f0dcb4668f55227d7936114443c78e8beda5bc69a518b359ce9af1b62500"
+      ]
+    },
+    {
+      "n": 17,
+      "index": 16,
+      "leaf": "7e9e8a16dd32053e6720f7aac04adc7d0bce506130e8251fa02f228ed5d22240",
+      "root": "7c5ec627131f3eea29bd93c3beb85d6420ae0e4515112896dab01f0e752495ae",
+      "proof": [
+        "7e9e8a16dd32053e6720f7aac04adc7d0bce506130e8251fa02f228ed5d22240",
+        "0fc5fa23cc50c669112c37339055b7dc51b6d4593a8bac6fc19b8bb5320bc590",
+        "891ae26e3ea00574673b157f5b2b809077105ab71e4c557d23bd1aab73d25a27",
+        "c63054b9a4b18398178337f1d3a0cc540201a33a02576dc7348705f4c52d1d60",
+        "04018f23847f9c87294e2edcf6d120fdfef75e1f541fa0d2a1673f4521015f76"
+      ]
+    }
+  ]
+}
