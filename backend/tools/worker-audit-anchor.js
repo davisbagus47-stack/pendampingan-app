@@ -1,24 +1,44 @@
 'use strict';
 
 /**
- * Anchor worker log audit (F4.3, FR-8.1) -- titik penyimpanan akar Merkle.
+ * Anchor worker log audit (F4.3 / FR-8.1) + pencatatan akar on-chain (FR-7.4).
  *
  * Ringkas: baca SELURUH `access_log` (urut `id`), rangkai rantai hash (F4.1),
  * bangun pohon Merkle (F4.2), lalu simpan satu baris `audit_anchor`
  * `[1, n]` berisi akar + `head_hash`. Bukti inklusi (endpoint F4.3) nanti
- * dipotong ke batch ini supaya akarnya sama dengan yang tersimpan.
+ * dipotong ke batch ini supaya akarnya sama dengan yang tersimpan -- baik akar
+ * itu hanya tersimpan off-chain maupun sudah dicatat on-chain.
  *
- * Keterbatasan yang harus ditulis jujur
- * -------------------------------------
- * Selama Foundry belum ada, `tx_hash` selalu NULL: akar hanya tersimpan di
- * database yang SAMA dengan log. Jadi anchor off-chain ini membuktikan
- * "tidak diubah sejak di-anchor" relatif terhadap operator -- bukan relatif
- * terhadap pihak ketiga yang tidak mempercayai operator. Itu baru datang
- * ketika akar benar-benar dicatat on-chain (FR-7.4). Yang SEDANG dibuktikan di
- * sini adalah mekanisme T1 (bukti inklusi) berjalan end-to-end tanpa chain.
+ * Dua tahap, dan mengapa dipisah
+ * ------------------------------
+ *   1. `rencanakan()` -- transaksi database: hitung akar, putuskan perlu baris
+ *      baru atau tidak, dan kembalikan baris yang perlu dicatat on-chain.
+ *   2. Panggilan rantai (bila `kirimAkar` tersedia) DI LUAR transaksi database,
+ *      lalu `catatTx()` menulis `tx_hash` kembali. Panggilan RPC bisa lambat;
+ *      menahannya di dalam transaksi terbuka mengunci tabel lebih lama dari
+ *      perlu.
  *
- * Idempoten: kalau anchor terakhir sudah menutupi seluruh log dengan akar
- * yang sama, tidak ada baris baru ditulis.
+ * Kapan `tx_hash` terisi (FR-7.4)
+ * -------------------------------
+ * Akar dicatat on-chain lewat `DataAnchor.anchorAuditRoot(toSeq, root, headHash)`
+ * dengan kunci `kirimAkar` yang DISUNTIKKAN. Bila tidak disuntikkan (bawaan),
+ * pass ini hanya off-chain dan `tx_hash` tetap NULL -- itu dilaporkan jujur,
+ * bukan disembunyikan. CLI (`node tools/worker-audit-anchor.js`) yang mengisi
+ * rantai secara otomatis bila `ANCHOR_RPC_URL`/`ANCHOR_CONTRACT`/
+ * `ANCHOR_PRIVATE_KEY` lengkap.
+ *
+ * Idempoten: kalau anchor terakhir sudah menutupi seluruh log dengan akar yang
+ * sama DAN `tx_hash`-nya sudah terisi, tidak ada baris baru dan tidak ada
+ * transaksi baru. Bila baris itu ada tetapi `tx_hash` masih NULL (mis. dibuat
+ * sebelum kontrak tersedia), pass ini hanya MENCOBA mencatatnya on-chain dan
+ * mengisi `tx_hash` -- tidak menggandakan baris. Kontrak sendiri idempoten per
+ * `toSeq` (akar sama boleh diulang, akar berbeda ditolak), jadi percobaan ulang
+ * aman.
+ *
+ * Keterbatasan yang harus ditulis jujur: selama `tx_hash` NULL, akar hanya
+ * tersimpan di database yang SAMA dengan log, jadi belum tahan penyusup yang
+ * mengubah keduanya sekaligus. Baru setelah akar benar-benar on-chain, "tidak
+ * diubah" berlaku relatif terhadap pihak ketiga, bukan hanya terhadap operator.
  */
 
 require('dotenv').config();
@@ -27,34 +47,54 @@ const path = require('path');
 
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
 const auditLogChain = require(path.join(__dirname, '..', 'lib', 'audit-log-chain.js'));
+const anchorChain = require(path.join(__dirname, '..', 'lib', 'anchor-chain.js'));
 
 const SQL_BACA = 'SELECT id, ts, actor_type, actor_id, category, params, result,' +
   ' response_rows, endpoint FROM access_log ORDER BY id ASC';
 
+const SQL_TERAKHIR = 'SELECT id, from_seq, to_seq, leaf_count, root, head_hash, algorithm, tx_hash, anchored_at' +
+  ' FROM audit_anchor ORDER BY to_seq DESC, id DESC LIMIT 1';
+
 /**
- * Satu pass anchoring.
+ * Pilih pengirim akar: penanda chain sungguhan bila konfigurasi lengkap,
+ * selain itu `null` (pas off-chain saja).
  *
- * @returns {Promise<{dilewati:boolean, alasan:string, jumlah_entri:number, anchor:object|null}>}
+ * @param {object} [env] bawaan `process.env`
+ * @returns {function|null}
  */
-async function sekali() {
+function pilihPengirim(env) {
+  const e = env || process.env;
+  if (anchorChain.tersedia(e)) return anchorChain.buatPengirimAkarDariEnv(e);
+  return null;
+}
+
+/**
+ * Fase database: hitung akar, putuskan perlu baris baru, dan tandai apakah
+ * baris hasil masih perlu dicatat on-chain (`perluRantai`).
+ *
+ * @returns {Promise<{dilewati:boolean, alasan:string, jumlah_entri:number, anchor:object|null, perluRantai:boolean}>}
+ */
+async function rencanakan() {
   return db.transaksi({ role: 'operator' }, async (client) => {
     const rows = (await client.query(SQL_BACA)).rows;
 
     if (rows.length === 0) {
-      return { dilewati: true, alasan: 'log kosong', jumlah_entri: 0, anchor: null };
+      return { dilewati: true, alasan: 'log kosong', jumlah_entri: 0, anchor: null, perluRantai: false };
     }
 
     const akar = auditLogChain.akarDariBaris(rows);
     const n = rows.length;
 
-    const terakhirRes = await client.query(
-      'SELECT id, from_seq, to_seq, leaf_count, root, head_hash, algorithm, tx_hash, anchored_at' +
-      ' FROM audit_anchor ORDER BY to_seq DESC, id DESC LIMIT 1'
-    );
-    const terakhir = terakhirRes.rows[0] || null;
+    const terakhir = (await client.query(SQL_TERAKHIR)).rows[0] || null;
 
     if (terakhir && Number(terakhir.to_seq) === n && terakhir.root === akar.root) {
-      return { dilewati: true, alasan: 'sudah ter-anchor dengan akar yang sama', jumlah_entri: n, anchor: terakhir };
+      return {
+        dilewati: true,
+        alasan: 'sudah ter-anchor dengan akar yang sama',
+        jumlah_entri: n,
+        anchor: terakhir,
+        perluRantai: terakhir.tx_hash === null || terakhir.tx_hash === undefined,
+      };
     }
 
     const ins = await client.query(
@@ -64,24 +104,107 @@ async function sekali() {
       [n, akar.leaf_count, akar.root, akar.head_hash, akar.algorithm]
     );
 
-    return { dilewati: false, alasan: null, jumlah_entri: n, anchor: ins.rows[0] };
+    return { dilewati: false, alasan: null, jumlah_entri: n, anchor: ins.rows[0], perluRantai: true };
   });
+}
+
+/**
+ * Tulis `tx_hash` ke baris anchor, dijaga `tx_hash IS NULL` supaya dua pekerja
+ * bersamaan tidak saling menimpa dan pengulangan tidak mengubah yang sudah ada.
+ *
+ * @param {number|string} id `audit_anchor.id`
+ * @param {string} txHash
+ * @returns {Promise<number>} jumlah baris yang diperbarui
+ */
+async function catatTx(id, txHash) {
+  return db.transaksi({ role: 'operator' }, async (client) => {
+    const res = await client.query(
+      'UPDATE audit_anchor SET tx_hash = $1 WHERE id = $2 AND tx_hash IS NULL',
+      [txHash, id]
+    );
+    return res.rowCount;
+  });
+}
+
+/**
+ * Satu pass anchoring.
+ *
+ * @param {object} [o]
+ * @param {function} [o.kirimAkar] sunikan panggilan chain; bila TIDAK diberi,
+ *   pass ini off-chain saja (aman untuk pemanggil lama/uji).
+ * @param {object} [o.env] dipakai saat `o.kirimAkar` tidak diberi (bawaan
+ *   `process.env`) -- hanya dipakai CLI agar tidak ada transaksi tak sengaja.
+ * @returns {Promise<object>} ringkasan pass
+ */
+async function sekali(o) {
+  const opt = o || {};
+  const rencana = await rencanakan();
+
+  const hasil = {
+    dilewati: rencana.dilewati,
+    alasan: rencana.alasan,
+    jumlah_entri: rencana.jumlah_entri,
+    anchor: rencana.anchor,
+    rantai: {
+      tersedia: false,
+      tx_hash: rencana.anchor ? rencana.anchor.tx_hash : null,
+      error: null,
+    },
+  };
+
+  if (!rencana.anchor || !rencana.perluRantai) return hasil;
+
+  // `o.kirimAkar === undefined` -> jangan mengira-ngira: tanpa sunikan eksplisit
+  // kita TIDAK menyentuh jaringan (mencegah transaksi tak sengaja dari kode
+  // yang mengimpor modul ini). CLI-lah yang menyuntikkan pengirim dari env.
+  const kirimAkar = opt.kirimAkar;
+  if (typeof kirimAkar !== 'function') {
+    hasil.rantai.catatan = 'pengirim rantai tidak disuntikkan; anchor off-chain saja (tx_hash NULL)';
+    return hasil;
+  }
+
+  hasil.rantai.tersedia = true;
+
+  let jawab;
+  try {
+    jawab = await kirimAkar({
+      to_seq: Number(rencana.anchor.to_seq),
+      root: rencana.anchor.root,
+      head_hash: rencana.anchor.head_hash,
+    });
+  } catch (e) {
+    jawab = { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+
+  if (jawab && jawab.ok && jawab.tx_hash) {
+    await catatTx(rencana.anchor.id, jawab.tx_hash);
+    hasil.anchor = Object.assign({}, rencana.anchor, { tx_hash: jawab.tx_hash });
+    hasil.rantai.tx_hash = jawab.tx_hash;
+  } else {
+    hasil.rantai.error = (jawab && jawab.error) || 'anchor on-chain gagal tanpa pesan';
+  }
+
+  return hasil;
 }
 
 if (require.main === module) {
   (async () => {
     try {
-      const ringkasan = await sekali();
-      if (ringkasan.dilewati) {
-        console.log('dilewati : ' + ringkasan.alasan);
-        console.log('entri    : ' + ringkasan.jumlah_entri);
-      } else {
-        console.log('entri    : ' + ringkasan.jumlah_entri);
+      const konf = anchorChain.konfigurasi(process.env);
+      console.log('chain    : ' + (anchorChain.tersedia(process.env)
+        ? konf.alamat + ' @ ' + konf.rpcUrl
+        : 'belum dikonfigurasi (anchor off-chain saja)'));
+      const ringkasan = await sekali({ kirimAkar: pilihPengirim(process.env) });
+      if (ringkasan.dilewati) console.log('dilewati : ' + ringkasan.alasan);
+      console.log('entri    : ' + ringkasan.jumlah_entri);
+      if (ringkasan.anchor) {
         console.log('akar     : ' + ringkasan.anchor.root);
         console.log('head     : ' + ringkasan.anchor.head_hash);
         console.log('anchor id: ' + ringkasan.anchor.id);
-        console.log('tx_hash  : (NULL -- Foundry belum tersedia, anchor off-chain)');
+        console.log('tx_hash  : ' + (ringkasan.anchor.tx_hash || '(NULL -- off-chain)'));
       }
+      if (ringkasan.rantai.error) console.log('galat    : ' + ringkasan.rantai.error);
+      else if (ringkasan.rantai.catatan) console.log('rantai   : ' + ringkasan.rantai.catatan);
     } catch (e) {
       console.error('anchor log audit gagal: ' + (e && e.message ? e.message : e));
       process.exitCode = 1;
@@ -91,4 +214,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { sekali, SQL_BACA };
+module.exports = { sekali, rencanakan, catatTx, pilihPengirim, SQL_BACA, SQL_TERAKHIR };

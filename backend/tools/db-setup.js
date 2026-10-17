@@ -259,9 +259,12 @@ function sqlHak(peran) {
     'GRANT INSERT ON access_log TO ' + peran + ';',
     'GRANT INSERT, UPDATE ON records TO ' + peran + ';',
     'GRANT INSERT, UPDATE ON chain_outbox TO ' + peran + ';',
-    // F4.3: anchor akar log ditulis operator/admin lewat `transaksi`. Root
-    // di-anchor sekali, tidak diubah; UPDATE tidak diperlukan.
-    'GRANT INSERT ON audit_anchor TO ' + peran + ';',
+    // F4.3 + FR-7.4: anchor akar log ditulis operator/admin lewat `transaksi`.
+    // Baris dibuat saat akar pertama kali dihitung (INSERT), lalu `tx_hash`
+    // diisi menyusul setelah `DataAnchor.anchorAuditRoot` sukses (UPDATE) --
+    // pemisahan itu yang membuat peng-angkuran on-chain bisa diulang tanpa
+    // menggandakan baris. Karena itu UPDATE diperlukan, bukan opsional.
+    'GRANT INSERT, UPDATE ON audit_anchor TO ' + peran + ';',
     'GRANT INSERT, UPDATE ON agency_rate_limit TO ' + peran + ';',
     'GRANT INSERT, UPDATE ON agency_config TO ' + peran + ';',
     // FR-3.1: konsol admin membuat instansi dan kategorinya lewat peran
@@ -358,6 +361,8 @@ function evaluasiIsolasi(h) {
     ['hak SELECT pada records diberikan', h.bisaBacaRecords, true],
     ['hak INSERT pada access_log diberikan', h.bisaTulisLog, true],
     ['hak UPDATE pada access_log tidak diberikan', h.bisaUbahLog, false],
+    ['hak INSERT pada audit_anchor diberikan', h.bisaTulisAnchor, true],
+    ['hak UPDATE pada audit_anchor diberikan', h.bisaUbahAnchor, true],
     ['UPDATE access_log ditolak database', h.ubahLogDitolak, true],
     ['operator melihat kedua record uji', h.operator.n, 2],
     ['instansi A hanya melihat record A', h.agencyA.n, 1],
@@ -552,6 +557,8 @@ async function verifikasiKeras(client, peran) {
     const bisaBacaRecords = await hak('records', 'SELECT');
     const bisaTulisLog = await hak('access_log', 'INSERT');
     const bisaUbahLog = await hak('access_log', 'UPDATE');
+    const bisaTulisAnchor = await hak('audit_anchor', 'INSERT');
+    const bisaUbahAnchor = await hak('audit_anchor', 'UPDATE');
 
     // --- fungsi cari_kunci (F3.10a) ---------------------------------------
     // Kalau fungsi ini tidak terpasang, autentikasi kunci API jatuh senyap ke
@@ -595,6 +602,8 @@ async function verifikasiKeras(client, peran) {
       bisaBacaRecords: bisaBacaRecords,
       bisaTulisLog: bisaTulisLog,
       bisaUbahLog: bisaUbahLog,
+      bisaTulisAnchor: bisaTulisAnchor,
+      bisaUbahAnchor: bisaUbahAnchor,
       ubahLogDitolak: ubahLogDitolak,
     };
     if (pesanUbah && !ubahLogDitolak) {

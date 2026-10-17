@@ -815,9 +815,10 @@ function emit(catalog) {
   w('-- Satu baris = satu batch log [from_seq, to_seq] (1-based menurut urutan id).');
   w('-- `root` = akar pohon Merkle atas hash entri batch itu; `head_hash` =');
   w('-- entry_hash entri terakhir, supaya pemotongan ekor (F4.1) bisa ditolak lewat');
-  w('-- expectedHead. `tx_hash` diisi hanya bila akar dicatat on-chain (FR-7.4);');
-  w('-- selama Foundry belum ada ia NULL -- anchor off-chain tetap berlaku dan cukup');
-  w('-- untuk membuktikan T1.');
+  w('-- expectedHead. `tx_hash` diisi oleh `tools/worker-audit-anchor.js` setelah');
+  w('-- akar dicatat on-chain lewat `DataAnchor.anchorAuditRoot` (FR-7.4); bila');
+  w('-- rantai belum dikonfigurasi ia NULL -- anchor off-chain tetap berlaku dan');
+  w('-- cukup untuk membuktikan T1.');
   w('--');
   w('-- PENTING (keterbatasan yang ditulis jujur): anchor off-chain menyimpan akar');
   w('-- di database yang SAMA, jadi tidak tahan terhadap penyusup yang mengubah');

@@ -26,12 +26,14 @@
  *   4. Laporkan: jumlah backfill, selisih per jenis, ringkasan status, dan
  *      hasil seam perbandingan on-chain.
  *
- * Perbandingan ke RANTAI (separuh FR-5.8 yang menuntut event on-chain) tidak
- * bisa dibuktikan selama Foundry belum terpasang. Seam `bandingkanRantai`
- * disediakan dengan cara yang sama seperti `tandai` F3.4: penanda bawaan
- * menolak dengan jujur (bukan mengaku cocok), dan semua uji memakai nilai
- * suntikan. Laporan tetap memuat ringkasan status (pending/anchored/failed/
- * skipped) supaya yang membaca job tahu berapa yang belum sampai ke rantai.
+ * Perbandingan ke RANTAI (separuh FR-5.8 yang menuntut event on-chain) kini
+ * TERSEDIA lewat `lib/reconcil-chain.js`: bila `ANCHOR_RPC_URL` dan
+ * `ANCHOR_CONTRACT` terisi, pass membaca event `DataAnchored`/
+ * `RecordSuperseded`, menyusun peta rantai, dan melaporkan selisih (hilang di
+ * rantai, commitment menyimpang, ekstra di rantai). Kunci pribadi tidak
+ * diperlukan untuk membaca. Seam `bandingkanRantai` tetap bisa disuntik
+ * (dipakai uji live off-chain), dan bila prasarana baca belum ada, seam bawaan
+ * menolak dengan jujur (bukan mengaku cocok).
  */
 
 require('dotenv').config();
@@ -40,9 +42,10 @@ const path = require('path');
 
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
 const reconcil = require(path.join(__dirname, '..', 'lib', 'reconcil.js'));
+const reconcilChain = require(path.join(__dirname, '..', 'lib', 'reconcil-chain.js'));
 
 /**
- * Seam bawaan: perbandingan on-chain belum tersedia. Jujur menolak dan
+ * Seam bercadangan: perbandingan on-chain TIDAK tersedia. Jujur menolak dan
  * menyebut alasan, BUKAN dilaporkan nol seperti andai sudah dibandingkan.
  *
  * @returns {Promise<{tersedia: boolean, catatan: string}>}
@@ -50,8 +53,57 @@ const reconcil = require(path.join(__dirname, '..', 'lib', 'reconcil.js'));
 async function bandingkanRantaiBawaan() {
   return {
     tersedia: false,
-    catatan: 'perbandingan on-chain belum disuntikkan (Foundry belum tersedia)',
+    catatan: 'perbandingan on-chain belum tersedia: isi ANCHOR_RPC_URL dan ANCHOR_CONTRACT',
   };
+}
+
+/**
+ * Rakit pembanding rantai sungguhan dari variabel lingkungan, atau `null` bila
+ * prasarana baca (RPC + alamat kontrak) belum lengkap. Kunci pribadi TIDAK
+ * diperlukan: membaca event adalah operasi publik.
+ *
+ * Kegagalan MERAKIT (mis. alamat salah bentuk) tidak melempar ke pemanggil;
+ * ia dikembalikan sebagai seam yang melaporkan `tersedia:false` beserta
+ * alasannya, supaya separuh off-chain rekonsiliasi tetap berjalan dan laporan
+ * tidak menyamar sebagai sukses.
+ *
+ * @param {object} [env]
+ * @param {object} [deps] `{ provider, kontrak, dariBlok, sampaiBlok, krypto }`
+ * @returns {function|null}
+ */
+function pembandingDariEnv(env, deps) {
+  if (!reconcilChain.tersedia(env)) return null;
+  try {
+    return reconcilChain.buatPembandingDariEnv(env, deps);
+  } catch (e) {
+    const pesan = e && e.message ? e.message : String(e);
+    return async () => ({
+      tersedia: false,
+      catatan: 'perbandingan on-chain gagal dirakit: ' + pesan,
+    });
+  }
+}
+
+/**
+ * Panggil seam perbandingan dengan pengaman: kegagalan BACA rantai (RPC mati,
+ * batas rentang log) tidak boleh menghapus laporan off-chain, tetapi juga tidak
+ * boleh disembunyikan. Dikembalikan sebagai `tersedia:false` + pesan galat.
+ *
+ * @param {function} fn
+ * @param {object[]} outbox
+ * @returns {Promise<object>}
+ */
+async function panggilBandingkan(fn, outbox) {
+  try {
+    return await fn(outbox);
+  } catch (e) {
+    const pesan = e && e.message ? e.message : String(e);
+    return {
+      tersedia: false,
+      catatan: 'baca rantai gagal: ' + pesan,
+      galat: true,
+    };
+  }
 }
 
 /**
@@ -63,7 +115,8 @@ async function bandingkanRantaiBawaan() {
  */
 async function sekali(o) {
   const bandingkanRantai = (o && typeof o.bandingkanRantai === 'function')
-    ? o.bandingkanRantai : bandingkanRantaiBawaan;
+    ? o.bandingkanRantai
+    : (pembandingDariEnv(process.env, o && o.deps) || bandingkanRantaiBawaan);
 
   return db.transaksi({ role: 'operator' }, async (client) => {
     const recs = (await client.query(
@@ -104,9 +157,10 @@ async function sekali(o) {
 
     const selisih = reconcil.periksa(recs, outbox);
     const status = reconcil.ringkas(outbox);
-    const rantai = await bandingkanRantai(outbox.map((o) => ({
-      record_id: o.record_id, version: o.version,
-    })));
+    // Baris outbox penuh diteruskan (bukan hanya record_id/version): pembanding
+    // on-chain memerlukan commitment dan chain_status untuk mendeteksi
+    // commitment yang menyimpang dan klaim `anchored` yang tak ada di rantai.
+    const rantai = await panggilBandingkan(bandingkanRantai, outbox);
 
     return {
       records: recs.length,
@@ -132,7 +186,17 @@ if (require.main === module) {
       console.log('selisih komitmen: ' + l.selisih.komitmen.length);
       console.log('selisih supers : ' + l.selisih.supersedes.length);
       console.log('status         : ' + JSON.stringify(l.status));
-      console.log('rantai         : ' + JSON.stringify(l.rantai));
+      if (l.rantai && l.rantai.tersedia) {
+        console.log('rantai         : tersedia (blok ' + l.rantai.dariBlok + '..' + l.rantai.sampaiBlok +
+          ', ' + l.rantai.jumlahEvent + ' event, ' + l.rantai.diRantai + ' versi unik)');
+        console.log('  cocok        : ' + l.rantai.dicocokkan);
+        console.log('  belum di rantai: ' + l.rantai.belumDiRantai);
+        console.log('  selisih      : hilang=' + l.rantai.hilangDiRantai.length +
+          ' komitmen=' + l.rantai.komitmen.length + ' ekstra=' + l.rantai.ekstraDiRantai.length +
+          ' -> ' + (l.rantai.nihil ? 'NIHIL (M-3)' : 'ADA SELISIH'));
+      } else {
+        console.log('rantai         : ' + JSON.stringify(l.rantai));
+      }
       if (l.selisih.yatim.length + l.selisih.komitmen.length + l.selisih.supersedes.length > 0) {
         console.log('\ncatatan selisih:');
         for (const y of l.selisih.yatim) {
@@ -156,4 +220,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { sekali, bandingkanRantaiBawaan };
+module.exports = { sekali, bandingkanRantaiBawaan, pembandingDariEnv, panggilBandingkan };

@@ -147,7 +147,7 @@ async function main() {
     const ringkasan = await anchorWorker.sekali();
     ok('anchor tidak dilewati', ringkasan.dilewati === false, ringkasan.alasan || '');
     ok('anchor menyimpan akar hex64', /^[0-9a-f]{64}$/.test(ringkasan.anchor && ringkasan.anchor.root));
-    ok('tx_hash NULL (Foundry belum ada)', ringkasan.anchor.tx_hash === null);
+    ok('tx_hash NULL (sekali() bawaan off-chain; on-chain lewat CLI/uji khusus)', ringkasan.anchor.tx_hash === null);
 
     anchorSesudah = (await utama.query('SELECT id FROM audit_anchor')).rows.map((r) => String(r.id));
 

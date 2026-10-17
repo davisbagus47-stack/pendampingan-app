@@ -75,7 +75,15 @@ async function main() {
     // 0. Seed: satu instansi aktif; 4 record (tiga pemakai operator F1.8 dan
     //    satu yang sudah punya outbox sehat); satu outbox yatim tanpa records.
     //    Semua hash dibangun lewat `canonical` yang sama dengan produksi.
+    //
+    // Rekonsiliasi membaca SELURUH records/outbox (peran operator), jadi
+    // hitungannya TIDAK boleh diasumsikan mulai dari nol: database yang sudah
+    // berisi baris lain (mis. data demo) akan menggeser angka. Baseline
+    // diambil lebih dulu, lalu yang diperiksa adalah TAMBAHAN dari seed uji.
     // -----------------------------------------------------------------------
+    const baseRecords = Number((await utama.query('SELECT count(*) AS n FROM records')).rows[0].n);
+    const baseOutbox = Number((await utama.query('SELECT count(*) AS n FROM chain_outbox')).rows[0].n);
+
     await utama.query(
       'INSERT INTO agencies (institution_key, name, status) VALUES ($1, $2, $3)',
       [kim, 'Instansi uji F3.5', 'active']
@@ -176,8 +184,8 @@ async function main() {
     const hasilSeam = { tersedia: false, catatan: 'suntikan uji: chain belum ada' };
     const laporan = await workerRecon.sekali({ bandingkanRantai: async () => hasilSeam });
 
-    eq('records yang dibaca (R1 x2 + R2 + R3 + R4)', laporan.records, 5);
-    eq('outbox yang dibaca (sebelum backfill: R2 + R3 + R4 + yatim)', laporan.outbox, 4);
+    eq('records yang dibaca (seed 5 di atas baseline)', laporan.records, baseRecords + 5);
+    eq('outbox yang dibaca (seed 4 di atas baseline)', laporan.outbox, baseOutbox + 4);
     eq('kekurangan: R1 v1 + R1 v2', laporan.kekurangan, 2);
     eq('dibackfill: 2', laporan.dibackfill, 2);
     eq('selisih yatim: 1', laporan.selisih.yatim.length, 1);

@@ -37,6 +37,7 @@ const path = require('path');
 
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
 const anchorWorker = require(path.join(__dirname, '..', 'lib', 'anchor-worker.js'));
+const anchorChain = require(path.join(__dirname, '..', 'lib', 'anchor-chain.js'));
 
 /**
  * Penanda bawaan: rantai belum tersedia. Gagal dengan pesan yang jujur dan
@@ -48,9 +49,69 @@ const anchorWorker = require(path.join(__dirname, '..', 'lib', 'anchor-worker.js
 async function penandaBawaan(baris) {
   return {
     ok: false,
-    error: 'penanda chain belum disuntikkan (Foundry belum tersedia) untuk ' +
+    error: 'penanda chain belum dikonfigurasi (isi ANCHOR_RPC_URL, ' +
+      'ANCHOR_CONTRACT, ANCHOR_PRIVATE_KEY) untuk ' +
       'record_id=' + baris.record_id + ' version=' + baris.version,
   };
+}
+
+/**
+ * Ambil jenis sasaran (kategori) sebuah record dari tabel `records` untuk
+ * diikat on-chain. Versi terbaru dimenangkan.
+ *
+ * @param {object} baris baris outbox
+ * @returns {Promise<string|null>}
+ */
+async function kategoriDariDb(baris) {
+  const rows = await db.transaksi({ role: 'operator' }, async (client) => {
+    const res = await client.query(
+      'SELECT jenis_sasaran FROM records WHERE record_id = $1' +
+      ' ORDER BY version DESC LIMIT 1',
+      [baris.record_id]
+    );
+    return res.rows;
+  });
+  return rows.length ? rows[0].jenis_sasaran : null;
+}
+
+/**
+ * Resolusi leluhur untuk baris koreksi: `supersedes_id` menyimpan `records.id`
+ * baris lama (BIGINT sebagai teks), kita perlu `record_id` + `version`-nya
+ * supaya bisa memanggil `supersede(...)`.
+ *
+ * @param {object} baris baris outbox
+ * @returns {Promise<{record_id: string, version: number}|null>}
+ */
+async function leluhurDariDb(baris) {
+  const id = baris && baris.supersedes_id;
+  if (id == null || !/^\d+$/.test(String(id))) return null;
+  const rows = await db.transaksi({ role: 'operator' }, async (client) => {
+    const res = await client.query(
+      'SELECT record_id, version FROM records WHERE id = $1',
+      [String(id)]
+    );
+    return res.rows;
+  });
+  if (!rows.length) return null;
+  return { record_id: String(rows[0].record_id), version: Number(rows[0].version) };
+}
+
+/**
+ * Pilih penanda: sungguhan bila konfigurasi chain lengkap, selain itu penanda
+ * bawaan yang gagal dengan pesan menjelaskan.
+ *
+ * @param {object} [env] bawaan `process.env`
+ * @returns {function}
+ */
+function pilihPenanda(env) {
+  const e = env || process.env;
+  if (anchorChain.tersedia(e)) {
+    return anchorChain.buatPenandaDariEnv(e, {
+      kategori: kategoriDariDb,
+      leluhur: leluhurDariDb,
+    });
+  }
+  return penandaBawaan;
 }
 
 /**
@@ -108,7 +169,9 @@ async function klaim(o) {
  * @returns {Promise<object>} ringkasan pass
  */
 async function sekali(o) {
-  const { rows, tandai } = await klaim(o || {});
+  const opt = Object.assign({}, o);
+  if (!opt.tandai) opt.tandai = pilihPenanda(process.env);
+  const { rows, tandai } = await klaim(opt);
   const ringkasan = { dibaca: rows.length, anchored: 0, retry: 0, failed: 0, diabaikan: 0, galat: 0, rincian: [] };
 
   for (const baris of rows) {
@@ -169,6 +232,10 @@ async function sekali(o) {
 if (require.main === module) {
   (async () => {
     try {
+      const konf = anchorChain.konfigurasi(process.env);
+      console.log('chain    : ' + (anchorChain.tersedia(process.env)
+        ? konf.alamat + ' @ ' + konf.rpcUrl
+        : 'belum dikonfigurasi (mode gagal-jujur)'));
       const ringkasan = await sekali({});
       console.log('dibaca   : ' + ringkasan.dibaca);
       console.log('anchored : ' + ringkasan.anchored);
@@ -192,4 +259,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { sekali, klaim, penandaBawaan };
+module.exports = { sekali, klaim, penandaBawaan, pilihPenanda, kategoriDariDb, leluhurDariDb };
