@@ -39,6 +39,14 @@
  * tersimpan di database yang SAMA dengan log, jadi belum tahan penyusup yang
  * mengubah keduanya sekaligus. Baru setelah akar benar-benar on-chain, "tidak
  * diubah" berlaku relatif terhadap pihak ketiga, bukan hanya terhadap operator.
+ *
+ * Penjadwalan berkala
+ * -------------------
+ * CLI mendukung `--loop [--interval <detik>]` untuk menjalankan pass ini
+ * berulang (bawaan 60 detik, minimal 1 detik; `ANCHOR_INTERVAL` juga dibaca).
+ * Loop sekuensial: tidak ada pass yang tumpang tindih, dan karena `sekali()`
+ * idempoten, pass tanpa perubahan hanya melaporkan "dilewati". Logika loop
+ * murni ada di `lib/anchor-loop.js` dan diuji tanpa database/jaringan.
  */
 
 require('dotenv').config();
@@ -48,6 +56,7 @@ const path = require('path');
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
 const auditLogChain = require(path.join(__dirname, '..', 'lib', 'audit-log-chain.js'));
 const anchorChain = require(path.join(__dirname, '..', 'lib', 'anchor-chain.js'));
+const anchorLoop = require(path.join(__dirname, '..', 'lib', 'anchor-loop.js'));
 
 const SQL_BACA = 'SELECT id, ts, actor_type, actor_id, category, params, result,' +
   ' response_rows, endpoint FROM access_log ORDER BY id ASC';
@@ -187,24 +196,86 @@ async function sekali(o) {
   return hasil;
 }
 
+/** Cetak ringkasan satu pass (format lama, dipertahankan). */
+function laporPass(ringkasan) {
+  if (ringkasan.dilewati) console.log('dilewati : ' + ringkasan.alasan);
+  console.log('entri    : ' + ringkasan.jumlah_entri);
+  if (ringkasan.anchor) {
+    console.log('akar     : ' + ringkasan.anchor.root);
+    console.log('head     : ' + ringkasan.anchor.head_hash);
+    console.log('anchor id: ' + ringkasan.anchor.id);
+    console.log('tx_hash  : ' + (ringkasan.anchor.tx_hash || '(NULL -- off-chain)'));
+  }
+  if (ringkasan.rantai.error) console.log('galat    : ' + ringkasan.rantai.error);
+  else if (ringkasan.rantai.catatan) console.log('rantai   : ' + ringkasan.rantai.catatan);
+}
+
+/** Ringkas satu pass jadi satu baris untuk mode loop. */
+function ringkasSatuBaris(hasil) {
+  if (!hasil) return ' (tanpa hasil)';
+  if (hasil.dilewati) return ' dilewati (' + hasil.alasan + '), entri ' + hasil.jumlah_entri;
+  const tx = hasil.anchor && hasil.anchor.tx_hash ? hasil.anchor.tx_hash : '(off-chain)';
+  let s = ' entri ' + hasil.jumlah_entri + ', anchor#' + (hasil.anchor ? hasil.anchor.id : '?') + ', tx ' + tx;
+  if (hasil.rantai && hasil.rantai.error) s += ', galat rantai: ' + hasil.rantai.error;
+  return s;
+}
+
+/** Jalankan CLI: pass tunggal (bawaan) atau loop berkala (`--loop`). */
+async function main() {
+  const argv = anchorLoop.bacaArgv(process.argv.slice(2));
+  if (argv.galat) {
+    console.error(argv.galat);
+    console.error(anchorLoop.teksBantuan());
+    process.exitCode = 1;
+    return;
+  }
+  if (argv.bantuan) { console.log(anchorLoop.teksBantuan()); return; }
+
+  const konf = anchorChain.konfigurasi(process.env);
+  console.log('chain    : ' + (anchorChain.tersedia(process.env)
+    ? konf.alamat + ' @ ' + konf.rpcUrl
+    : 'belum dikonfigurasi (anchor off-chain saja)'));
+
+  if (!db.urlDatabase()) {
+    console.error('galat    : DATABASE_URL belum diset -- worker anchor butuh database.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const kirimAkar = pilihPengirim(process.env);
+
+  if (!argv.loop) {
+    laporPass(await sekali({ kirimAkar: kirimAkar }));
+    return;
+  }
+
+  const selang = anchorLoop.selangMs(argv.intervalDetik, process.env);
+  let berhenti = false;
+  const tandaiBerhenti = () => {
+    if (berhenti) return;
+    berhenti = true;
+    console.log('sinyal berhenti diterima; menuntaskan pass berjalan lalu keluar...');
+  };
+  process.on('SIGINT', tandaiBerhenti);
+  process.on('SIGTERM', tandaiBerhenti);
+
+  console.log('loop     : tiap ' + Math.round(selang / 1000) + ' detik (Ctrl+C untuk berhenti)');
+  const ringkas = await anchorLoop.jalankan({
+    sekaliFn: () => sekali({ kirimAkar: kirimAkar }),
+    selangMs: selang,
+    berhenti: () => berhenti,
+    log: ({ pass, hasil, galat }) => {
+      if (galat) { console.log('pass ' + pass + ' galat: ' + galat); return; }
+      console.log('pass ' + pass + ' :' + ringkasSatuBaris(hasil));
+    },
+  });
+  console.log('loop selesai: ' + ringkas.pass + ' pass, ' + ringkas.lulus + ' lulus, ' + ringkas.galat + ' galat');
+}
+
 if (require.main === module) {
   (async () => {
     try {
-      const konf = anchorChain.konfigurasi(process.env);
-      console.log('chain    : ' + (anchorChain.tersedia(process.env)
-        ? konf.alamat + ' @ ' + konf.rpcUrl
-        : 'belum dikonfigurasi (anchor off-chain saja)'));
-      const ringkasan = await sekali({ kirimAkar: pilihPengirim(process.env) });
-      if (ringkasan.dilewati) console.log('dilewati : ' + ringkasan.alasan);
-      console.log('entri    : ' + ringkasan.jumlah_entri);
-      if (ringkasan.anchor) {
-        console.log('akar     : ' + ringkasan.anchor.root);
-        console.log('head     : ' + ringkasan.anchor.head_hash);
-        console.log('anchor id: ' + ringkasan.anchor.id);
-        console.log('tx_hash  : ' + (ringkasan.anchor.tx_hash || '(NULL -- off-chain)'));
-      }
-      if (ringkasan.rantai.error) console.log('galat    : ' + ringkasan.rantai.error);
-      else if (ringkasan.rantai.catatan) console.log('rantai   : ' + ringkasan.rantai.catatan);
+      await main();
     } catch (e) {
       console.error('anchor log audit gagal: ' + (e && e.message ? e.message : e));
       process.exitCode = 1;
