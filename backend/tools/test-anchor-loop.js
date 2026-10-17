@@ -34,7 +34,7 @@ function eq(name, aktual, diharapkan) {
 async function main() {
   console.log('=== 1. bacaArgv ===');
   {
-    eq('tanpa argumen', al.bacaArgv([]), { loop: false, intervalDetik: null, bantuan: false, galat: null });
+    eq('tanpa argumen', al.bacaArgv([]), { loop: false, intervalDetik: null, bantuan: false, offChain: false, galat: null });
     eq('--loop', al.bacaArgv(['--loop']).loop, true);
     eq('--interval terpisah', al.bacaArgv(['--interval', '30']).intervalDetik, 30);
     eq('--interval=seragam', al.bacaArgv(['--interval=45']).intervalDetik, 45);
@@ -42,7 +42,10 @@ async function main() {
     eq('--help', al.bacaArgv(['--help']).bantuan, true);
     eq('-h', al.bacaArgv(['-h']).bantuan, true);
     eq('--loop + --interval', al.bacaArgv(['--loop', '--interval', '5']),
-      { loop: true, intervalDetik: 5, bantuan: false, galat: null });
+      { loop: true, intervalDetik: 5, bantuan: false, offChain: false, galat: null });
+    eq('--off-chain', al.bacaArgv(['--off-chain']).offChain, true);
+    eq('--off-chain + --loop', al.bacaArgv(['--off-chain', '--loop']),
+      { loop: true, intervalDetik: null, bantuan: false, offChain: true, galat: null });
 
     const bad = al.bacaArgv(['--interval', 'abc']);
     ok('--interval abc -> galat', typeof bad.galat === 'string' && bad.galat.indexOf('abc') >= 0);
@@ -51,7 +54,7 @@ async function main() {
     ok('--interval negatif -> galat', !!al.bacaArgv(['--interval', '-3']).galat);
     ok('--interval tanpa nilai -> galat', !!al.bacaArgv(['--interval']).galat);
     ok('argumen tak dikenal diabaikan', al.bacaArgv(['--berisik']).galat === null);
-    eq('argv bukan array aman', al.bacaArgv(null), { loop: false, intervalDetik: null, bantuan: false, galat: null });
+    eq('argv bukan array aman', al.bacaArgv(null), { loop: false, intervalDetik: null, bantuan: false, offChain: false, galat: null });
   }
 
   console.log('\n=== 2. selangMs ===');
@@ -129,6 +132,7 @@ async function main() {
   {
     ok('memuat judul Penggunaan', al.teksBantuan().indexOf('Penggunaan') >= 0);
     ok('menyebut --loop', al.teksBantuan().indexOf('--loop') >= 0);
+    ok('menyebut --off-chain', al.teksBantuan().indexOf('--off-chain') >= 0);
   }
 
   console.log('\nRegresi: ' + passed + ' lulus, ' + failed + ' gagal.');

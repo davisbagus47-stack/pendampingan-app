@@ -27,6 +27,7 @@ function teksBantuan() {
     '  (tanpa argumen)    satu pass lalu keluar',
     '  --loop             ulangi pass tiap <detik> sampai dihentikan',
     '  --interval <detik> selang antar pass saat --loop (minimal 1)',
+    '  --off-chain        paksa TANPA transaksi on-chain meski chain terkonfigurasi',
     '  -h, --help         tampilkan bantuan ini',
     '',
     'Selang juga bisa lewat ANCHOR_INTERVAL (detik). Hentikan loop dengan Ctrl+C.',
@@ -37,14 +38,15 @@ function teksBantuan() {
  * Baca argumen CLI.
  *
  * @param {string[]} argv biasanya `process.argv.slice(2)`
- * @returns {{loop:boolean, intervalDetik:(number|null), bantuan:boolean, galat:(string|null)}}
+ * @returns {{loop:boolean, intervalDetik:(number|null), bantuan:boolean, offChain:boolean, galat:(string|null)}}
  */
 function bacaArgv(argv) {
   const a = Array.isArray(argv) ? argv : [];
-  const out = { loop: false, intervalDetik: null, bantuan: false, galat: null };
+  const out = { loop: false, intervalDetik: null, bantuan: false, offChain: false, galat: null };
   for (let i = 0; i < a.length; i++) {
     const arg = a[i];
     if (arg === '--loop') { out.loop = true; continue; }
+    if (arg === '--off-chain') { out.offChain = true; continue; }
     if (arg === '--help' || arg === '-h') { out.bantuan = true; continue; }
     if (arg === '--interval' || arg === '-i') {
       const v = a[i + 1];

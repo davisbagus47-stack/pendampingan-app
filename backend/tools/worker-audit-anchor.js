@@ -47,6 +47,10 @@
  * Loop sekuensial: tidak ada pass yang tumpang tindih, dan karena `sekali()`
  * idempoten, pass tanpa perubahan hanya melaporkan "dilewati". Logika loop
  * murni ada di `lib/anchor-loop.js` dan diuji tanpa database/jaringan.
+ *
+ * `--off-chain` memaksa TANPA transaksi on-chain meski `ANCHOR_*` lengkap --
+ * penanda aman untuk uji asap. Argumen ini tidak bisa ditimpa dotenv, berbeda
+ * dari mengosongkan variabel lingkungan.
  */
 
 require('dotenv').config();
@@ -232,9 +236,13 @@ async function main() {
   if (argv.bantuan) { console.log(anchorLoop.teksBantuan()); return; }
 
   const konf = anchorChain.konfigurasi(process.env);
-  console.log('chain    : ' + (anchorChain.tersedia(process.env)
-    ? konf.alamat + ' @ ' + konf.rpcUrl
-    : 'belum dikonfigurasi (anchor off-chain saja)'));
+  if (argv.offChain) {
+    console.log('chain    : dipaksa mati (--off-chain); tidak ada transaksi on-chain');
+  } else {
+    console.log('chain    : ' + (anchorChain.tersedia(process.env)
+      ? konf.alamat + ' @ ' + konf.rpcUrl
+      : 'belum dikonfigurasi (anchor off-chain saja)'));
+  }
 
   if (!db.urlDatabase()) {
     console.error('galat    : DATABASE_URL belum diset -- worker anchor butuh database.');
@@ -242,7 +250,10 @@ async function main() {
     return;
   }
 
-  const kirimAkar = pilihPengirim(process.env);
+  // `--off-chain` mengalahkan konfigurasi env: penanda jelas supaya uji asap
+  // tidak pernah menyiarkan transaksi tak sengaja (dotenv tidak bisa
+  // menimpanya karena ini argumen, bukan variabel lingkungan).
+  const kirimAkar = argv.offChain ? null : pilihPengirim(process.env);
 
   if (!argv.loop) {
     laporPass(await sekali({ kirimAkar: kirimAkar }));
