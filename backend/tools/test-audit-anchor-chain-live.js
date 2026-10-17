@@ -22,6 +22,9 @@
  *
  * Kontrak seperti live test lain:
  *   - Tanpa `DATABASE_URL` atau tanpa artefak: DILEWATI exit 0 (bukan bukti).
+ *   - EKSKLUSIF: mengambil advisory lock (tools/uji-live-lock.js) karena
+ *     meng-anchor SELURUH access_log global; uji lain yang menghapus baris
+ *     access_log/audit_anchor bersamaan akan mengubah prefix yang di-anchor.
  *   - Tidak meninggalkan data: baris access_log ber-watermark `uji-f7a-*` dan
  *     anchor baru dihapus di `finally` lewat koneksi owner.
  */
@@ -36,6 +39,7 @@ try { require('dotenv').config(); } catch (e) {}
 
 const main = require(path.join(__dirname, '..', 'tools', 'worker-audit-anchor.js'));
 const ac = require(path.join(__dirname, '..', 'lib', 'anchor-chain.js'));
+const ujiLiveLock = require(path.join(__dirname, 'uji-live-lock.js'));
 
 const ARTEFAK = path.join(__dirname, '..', '..', 'contracts', 'out', 'DataAnchor.sol', 'DataAnchor.json');
 const PORT = Number(process.env.ANCHOR_AUDIT_LIVE_PORT || 8550);
@@ -103,6 +107,10 @@ async function jalankan() {
   const utama = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
   utama.on('error', () => {});
 
+  // Pegangan advisory lock; diisi di dalam try supaya `finally` selalu
+  // melepas kunci walau pemasangan gagal (lihat tools/uji-live-lock.js).
+  let peganganKunci = null;
+
   const proc = spawn(cariAnvil(), ['--port', String(PORT)], { stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.on('data', () => {});
   proc.stderr.on('data', () => {});
@@ -116,6 +124,10 @@ async function jalankan() {
   let anchorSesudah = [];
 
   try {
+    // Serialkan dengan uji live lain yang menghapus baris access_log/audit_anchor
+    // (lihat tools/uji-live-lock.js). Uji ini meng-anchor SELURUH access_log.
+    peganganKunci = await ujiLiveLock.ambil(process.env.DATABASE_URL);
+
     const provider = new JsonRpcProvider(RPC);
     await tunggu(async () => { await provider.getBlockNumber(); }, 20000, 250);
 
@@ -232,6 +244,7 @@ async function jalankan() {
     }
 
     await utama.end().catch(() => {});
+    await ujiLiveLock.lepas(peganganKunci);
   }
 
   console.log('\nlulus: ' + passed + '   gagal: ' + failed);

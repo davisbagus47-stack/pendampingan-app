@@ -16,6 +16,11 @@
  *
  * Kontrak seperti live test lain:
  *   - Tanpa DATABASE_URL: DILEWATI exit 0 (bukan bukti pass).
+ *   - EKSKLUSIF: mengambil advisory lock (tools/uji-live-lock.js) karena uji ini
+ *     meng-anchor SELURUH access_log global. Bila uji lain yang menghapus baris
+ *     access_log/audit_anchor berjalan bersamaan, penghapusan itu mengubah
+ *     prefix yang sudah di-anchor dan akar yang dihitung ulang tidak cocok lagi.
+ *     Kunci membuat uji-uji itu berjalan bergantian, bukan bersamaan.
  *   - Tidak meninggalkan data: baris access_log ber-watermark `uji-f4a-*`
  *     dan anchor yang dibuat uji ini dihapus di `finally` lewat koneksi
  *     utama (owner, bypass RLS).
@@ -34,6 +39,7 @@ const app = require(path.join(__dirname, '..', 'index.js'));
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
 const auditLogChain = require(path.join(__dirname, '..', 'lib', 'audit-log-chain.js'));
 const anchorWorker = require(path.join(__dirname, '..', 'tools', 'worker-audit-anchor.js'));
+const ujiLiveLock = require(path.join(__dirname, 'uji-live-lock.js'));
 
 let passed = 0;
 let failed = 0;
@@ -84,11 +90,19 @@ async function main() {
   const endpointAir = '/' + tanda;
 
   let server = null;
+  let peganganKunci = null;
   let idTerbuat = [];
   let anchorSebelum = [];
   let anchorSesudah = [];
 
   try {
+    // Serialkan dengan uji live lain yang menghapus baris access_log/audit_anchor
+    // (lihat tools/uji-live-lock.js). Meng-anchor seluruh access_log global lalu
+    // membacanya kembali hanya sah bila tidak ada uji lain yang MENGHAPUS baris
+    // di dalam prefix pada saat yang sama. Di dalam try supaya `finally` tetap
+    // melepas kunci walau pemasangan ini gagal.
+    peganganKunci = await ujiLiveLock.ambil(process.env.DATABASE_URL);
+
     // Mode legacy: matikan verifikasi kunci supaya endpoint bisa dipanggil
     // tanpa menyemai instansi + kunci. Ini menguji route, bukan autentikasi.
     app.setCariKunci(null);
@@ -211,6 +225,7 @@ async function main() {
 
     await utama.end().catch(() => {});
     await db.matikan().catch(() => {});
+    await ujiLiveLock.lepas(peganganKunci);
   }
 
   console.log('\n' + (berjalan ? 'lulus: ' + passed + '   gagal: ' + failed : 'DILEWATI'));

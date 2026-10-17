@@ -21,11 +21,17 @@
  *          identitas aplikasi. Baris uji ditandai `endpoint = __uji_datalib__`
  *          supaya pembersihan tidak pernah menyentuh data lain.
  *
+ *   3. Pembersihan MENGHAPUS baris `access_log`. Karena itu uji ini mengambil
+ *      advisory lock bersama (tools/uji-live-lock.js) supaya tidak berjalan
+ *      bersamaan dengan uji live lain yang meng-anchor seluruh `access_log` --
+ *      menghapus baris di dalam prefix yang di-anchor akan merusak akarnya.
+ *
  * Yang TIDAK diuji di sini (menunggu suite penerimaan server): row-level
  * isolation dan policy lain -- itu sudah diuji `db-setup.js periksa` 13/13.
  */
 
 const db = require('../lib/db.js');
+const ujiLiveLock = require('./uji-live-lock.js');
 
 // DATABASE_URL dibaca dari .env (atau lingkungan), pola sama db-setup.js:
 // dotenv dimuat malas supaya skrip tetap berjalan kalau paketnya tidak ada.
@@ -60,9 +66,17 @@ async function main() {
   const utama = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
   utama.on('error', () => {});
 
+  // Serialkan dengan uji live lain (lihat tools/uji-live-lock.js): pembersihan
+  // di bawah MENGHAPUS baris access_log, yang bila berada di dalam prefix yang
+  // sedang di-anchor uji lain akan merusak akar mereka. Diisi di dalam try
+  // supaya `finally` selalu melepas kunci.
+  let peganganKunci = null;
+
   const tanda = '__uji_datalib__' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
 
   try {
+    peganganKunci = await ujiLiveLock.ambil(process.env.DATABASE_URL);
+
     // -------------------------------------------------------------------------
     // 1. Jalur produksi: sink menulis sebagai app_api.
     // -------------------------------------------------------------------------
@@ -232,6 +246,7 @@ async function main() {
     ).catch(() => {});
     await db.matikan();
     await utama.end().catch(() => {});
+    await ujiLiveLock.lepas(peganganKunci);
   }
 
   console.log('\nlulus: ' + passed + '   gagal: ' + failed);

@@ -14,6 +14,9 @@
  *
  * Kontrak seperti live test lain:
  *   - Tanpa DATABASE_URL: DILEWATI exit 0 (bukan bukti pass).
+ *   - EKSKLUSIF: mengambil advisory lock (tools/uji-live-lock.js) karena
+ *     menghapus baris access_log benihnya; penghapusan di dalam prefix yang
+ *     sedang di-anchor uji lain membuat akar mereka tak lagi cocok.
  *   - Data uji ber-watermark `uji-f4z-*` dihapus di `finally`.
  *   - Logger akses TIDAK ditukar: baris access_log nyata diperlukan.
  */
@@ -27,6 +30,7 @@ try { require('dotenv').config(); } catch (e) {}
 const app = require(path.join(__dirname, '..', 'index.js'));
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
 const zkpCli = require(path.join(__dirname, '..', 'zkp', 'src', 'cli.js'));
+const ujiLiveLock = require(path.join(__dirname, 'uji-live-lock.js'));
 
 let passed = 0;
 let failed = 0;
@@ -74,6 +78,12 @@ async function main() {
   const utama = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
   utama.on('error', () => {});
 
+  // Serialkan dengan uji live lain (lihat tools/uji-live-lock.js): uji ini
+  // MENGHAPUS baris access_log benihnya, yang bisa berada di dalam prefix yang
+  // sedang di-anchor/di-buktikan uji lain sehingga akar mereka tak lagi cocok.
+  // Diisi di dalam try supaya `finally` selalu melepas kunci.
+  let peganganKunci = null;
+
   const tanda = 'uji-f4z-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
   const endpointAir = '/' + tanda;
 
@@ -81,6 +91,8 @@ async function main() {
   let idTerbuat = [];
 
   try {
+    peganganKunci = await ujiLiveLock.ambil(process.env.DATABASE_URL);
+
     app.setCariKunci(null);
 
     const nilai = [];
@@ -166,6 +178,7 @@ async function main() {
 
     await utama.end().catch(() => {});
     await db.matikan().catch(() => {});
+    await ujiLiveLock.lepas(peganganKunci);
   }
 
   console.log('\n' + (berjalan ? 'lulus: ' + passed + '   gagal: ' + failed : 'DILEWATI'));
