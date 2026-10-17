@@ -24,9 +24,12 @@
  *   - Tidak meninggalkan data: baris access_log ber-watermark `uji-f4a-*`
  *     dan anchor yang dibuat uji ini dihapus di `finally` lewat koneksi
  *     utama (owner, bypass RLS).
- *   - Logger akses TIDAK ditukar: uji ini justru butuh access_log nyata.
- *     Karena itu verifikasi dibatasi pada baris milik uji, dan baris yang
- *     ditulis oleh permintaan uji ikut dibersihkan lewat watermark endpoint.
+ *   - Logger PERMINTAAN dialihkan ke penangkap in-memory
+ *     (`app.gantiAccessLogger`) supaya permintaan uji tidak menumpuk baris
+ *     `/api/v1/audit/proof` di `access_log` produksi -- baris seperti itu tak
+ *     bisa dibedakan dari permintaan nyata, jadi membersihkannya tidak mungkin.
+ *     Tabel tetap yang asli: empat baris target disemai langsung lewat koneksi
+ *     owner, dan endpoint tetap membaca `access_log` sungguhan.
  */
 
 const path = require('path');
@@ -37,9 +40,18 @@ try { require('dotenv').config(); } catch (e) {}
 
 const app = require(path.join(__dirname, '..', 'index.js'));
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
+const accessLog = require(path.join(__dirname, '..', 'lib', 'access-log.js'));
 const auditLogChain = require(path.join(__dirname, '..', 'lib', 'audit-log-chain.js'));
 const anchorWorker = require(path.join(__dirname, '..', 'tools', 'worker-audit-anchor.js'));
 const ujiLiveLock = require(path.join(__dirname, 'uji-live-lock.js'));
+
+// Penangkap permintaan uji (lihat `gantiAccessLogger`): permintaan ke endpoint
+// ini TIDAK ditulis ke `access_log` produksi. Baris ber-endpoint
+// `/api/v1/audit/proof` tak bisa dibedakan dari permintaan nyata, jadi
+// membersihkannya kelak tidak mungkin. Tabel `access_log` tetap yang asli:
+// empat baris target disemai langsung lewat koneksi owner.
+const tertangkap = [];
+const loggerUji = accessLog.buatLogger({ sink: (entri) => { tertangkap.push(entri); } });
 
 let passed = 0;
 let failed = 0;
@@ -71,8 +83,6 @@ async function minta(jalur) {
   const teks = await res.text();
   let body = null;
   try { body = JSON.parse(teks); } catch (e) {}
-  // Tunggu entri access_log permintaan ini selesai ditulis (event finish).
-  await new Promise((r) => setTimeout(r, 30));
   return { status: res.status, body };
 }
 
@@ -106,6 +116,10 @@ async function main() {
     // Mode legacy: matikan verifikasi kunci supaya endpoint bisa dipanggil
     // tanpa menyemai instansi + kunci. Ini menguji route, bukan autentikasi.
     app.setCariKunci(null);
+
+    // Permintaan uji dialihkan ke penangkap in-memory supaya tidak menumpuk
+    // baris `/api/v1/audit/proof` di tabel produksi (lihat catatan di atas).
+    app.gantiAccessLogger(loggerUji);
 
     // --- seed access_log langsung lewat koneksi utama (owner)
     const nilai = [];

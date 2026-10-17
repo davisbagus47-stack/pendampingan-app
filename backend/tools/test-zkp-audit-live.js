@@ -18,7 +18,10 @@
  *     menghapus baris access_log benihnya; penghapusan di dalam prefix yang
  *     sedang di-anchor uji lain membuat akar mereka tak lagi cocok.
  *   - Data uji ber-watermark `uji-f4z-*` dihapus di `finally`.
- *   - Logger akses TIDAK ditukar: baris access_log nyata diperlukan.
+ *   - Logger PERMINTAAN dialihkan ke penangkap in-memory
+ *     (`app.gantiAccessLogger`) supaya permintaan uji tidak menumpuk baris
+ *     `/api/v1/audit/zkp-proof` di `access_log` produksi; tabel tetap yang
+ *     asli karena empat baris target disemai langsung lewat koneksi owner.
  */
 
 const path = require('path');
@@ -29,8 +32,15 @@ try { require('dotenv').config(); } catch (e) {}
 
 const app = require(path.join(__dirname, '..', 'index.js'));
 const db = require(path.join(__dirname, '..', 'lib', 'db.js'));
+const accessLog = require(path.join(__dirname, '..', 'lib', 'access-log.js'));
 const zkpCli = require(path.join(__dirname, '..', 'zkp', 'src', 'cli.js'));
 const ujiLiveLock = require(path.join(__dirname, 'uji-live-lock.js'));
+
+// Penangkap permintaan uji: permintaan ke `/api/v1/audit/zkp-proof` TIDAK
+// ditulis ke `access_log` produksi (tak bisa dibedakan dari permintaan nyata,
+// jadi membersihkannya tidak mungkin). Tabel tetap asli lewat baris seed.
+const tertangkap = [];
+const loggerUji = accessLog.buatLogger({ sink: (entri) => { tertangkap.push(entri); } });
 
 let passed = 0;
 let failed = 0;
@@ -62,7 +72,6 @@ async function minta(jalur) {
   const teks = await res.text();
   let body = null;
   try { body = JSON.parse(teks); } catch (e) {}
-  await new Promise((r) => setTimeout(r, 30));
   return { status: res.status, body };
 }
 
@@ -94,6 +103,10 @@ async function main() {
     peganganKunci = await ujiLiveLock.ambil(process.env.DATABASE_URL);
 
     app.setCariKunci(null);
+
+    // Permintaan uji dialihkan ke penangkap in-memory supaya tidak menumpuk
+    // baris `/api/v1/audit/zkp-proof` di tabel produksi.
+    app.gantiAccessLogger(loggerUji);
 
     const nilai = [];
     const kategori = ['Catin', 'Catin', 'Catin', 'Catin'];
