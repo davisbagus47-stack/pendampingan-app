@@ -1611,14 +1611,16 @@ async function anchorkanRecordDb(ringkas, meta) {
 anchorkanRecord = anchorkanRecordDb;
 
 /**
- * Catat satu kiriman form publik sebagai `records` + `chain_outbox` (F3.3).
+ * Catat satu kiriman form publik sebagai `records` + `chain_outbox` (F3.3),
+ * lalu ANCHOR sinkron per input (F3.4).
  *
  * Form tidak membawa kunci instansi, jadi penulisan berjalan peran `operator`
  * dengan `institution_id` = instansi operator yang di-seed
- * (`tools/seed-operator.js`). Outbox ditulis `pending`: anchor-nya dilakukan
- * worker, bukan di dalam request -- supaya form publik tidak menyiarkan
- * transaksi berbayar per kiriman (mudah disalahgunakan) dan tidak menggantung
- * menunggu konfirmasi.
+ * (`tools/seed-operator.js`). Penulisan dan panggilan chain DIPISAH: baris
+ * `records` + `chain_outbox` di-COMMIT lebih dulu, baru anchor dijalankan --
+ * panggilan RPC tidak boleh terjadi di dalam transaksi database yang terbuka
+ * (bisa lambat). Kalau anchor gagal, baris tetap `pending` dan worker/cron
+ * menyapunya nanti (idempoten: outbox di-update dengan penjaga `chain_status`).
  *
  * Selalu mengembalikan objek ringkas (tidak pernah melempar untuk kondisi
  * wajar): DB tidak ada, instansi belum di-seed, atau jenis di luar taksonomi
@@ -1626,7 +1628,7 @@ anchorkanRecord = anchorkanRecordDb;
  * yang sudah sukses tetap sukses.
  *
  * @param {object} body payload form
- * @returns {Promise<{status:string, record_id?:string, commitment?:string, reason?:string}>}
+ * @returns {Promise<{status:string, record_id?:string, commitment?:string, tx_hash?:string, error?:string, reason?:string}>}
  */
 async function catatRecordForm(body) {
   if (!db.urlDatabase()) {
@@ -1635,13 +1637,13 @@ async function catatRecordForm(body) {
   const kunci = String(process.env.FORM_INSTITUTION_KEY || 'operator-data-center').trim();
   const { map: sectionMap } = deriveSections();
 
-  return db.transaksi({ role: 'operator' }, async (client) => {
+  const hasilTulis = await db.transaksi({ role: 'operator' }, async (client) => {
     const ag = (await client.query(
       'SELECT institution_key FROM agencies WHERE institution_key = $1',
       [kunci]
     )).rows[0];
     if (!ag) {
-      return { status: 'skipped', reason: 'INSTITUTION_NOT_SEEDED', institution_key: kunci };
+      return { skipped: true, reason: 'INSTITUTION_NOT_SEEDED', institution_key: kunci };
     }
 
     const rec = recordsWrite.bangunRecord({
@@ -1658,7 +1660,7 @@ async function catatRecordForm(body) {
 
     const jenis = rec.payload_json.jenisSasaran;
     if (!TAKSONOMI_SASARAN.has(jenis)) {
-      return { status: 'skipped', reason: 'JENIS_UNKNOWN', jenis: jenis || null };
+      return { skipped: true, reason: 'JENIS_UNKNOWN', jenis: jenis || null };
     }
 
     const { columns, values } = recordsWrite.kolomDanNilai(rec, FIELD_ORDER, 'form-publik');
@@ -1675,8 +1677,36 @@ async function catatRecordForm(body) {
       [outbox.record_id, outbox.version, outbox.supersedes_id, outbox.commitment]
     );
 
-    return { status: 'pending', record_id: rec.record_id, commitment: outbox.commitment };
+    return {
+      record_id: rec.record_id,
+      version: 1,
+      commitment: outbox.commitment,
+      jenis_sasaran: jenis,
+      supersedes_id: null,
+    };
   });
+
+  if (hasilTulis && hasilTulis.skipped) {
+    return { status: 'skipped', reason: hasilTulis.reason, institution_key: hasilTulis.institution_key, jenis: hasilTulis.jenis };
+  }
+
+  // Anchor sinkron per input, di LUAR transaksi tulis yang sudah commit.
+  let anchor;
+  try {
+    anchor = typeof anchorkanRecord === 'function'
+      ? await anchorkanRecord(hasilTulis, { jenis_sasaran: hasilTulis.jenis_sasaran })
+      : { status: 'pending', error: 'ANCHOR_DISABLED' };
+  } catch (e) {
+    anchor = { status: 'pending', error: e && e.message ? e.message : String(e) };
+  }
+
+  return {
+    status: anchor.status || 'pending',
+    record_id: hasilTulis.record_id,
+    commitment: hasilTulis.commitment,
+    tx_hash: anchor.tx_hash || null,
+    error: anchor.error || null,
+  };
 }
 
 // Pasang implementasi sungguhan sebagai bawaan titik suntik.
@@ -1946,10 +1976,10 @@ app.post('/api/submit', async (req, res) => {
     });
 
     // Per-input audit: setelah baris Sheets sukses, catat juga `records` +
-    // `chain_outbox` (peran operator). Anchor on-chain TIDAK dilakukan di sini
-    // -- form publik tidak boleh menyiarkan transaksi berbayar per kiriman.
-    // Baris outbox `pending` disapu worker. Kegagalan pencatatan tidak
-    // menggagalkan submit: Sheets adalah tujuan utama form.
+    // `chain_outbox` (peran operator) DAN anchor sinkron per input. `catatRecordForm`
+    // yang mengerjakan keduanya. Bila anchor gagal (RPC/galat), baris tetap
+    // `pending` dan worker/cron menyapunya nanti -- submit tetap sukses karena
+    // Sheets adalah tujuan utama form.
     let auditForm;
     try {
       auditForm = typeof catatFormAudit === 'function'

@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Uji live PER-INPUT AUDIT end-to-end: POST /api/v1/records (anchor SINKRON)
- * dan POST /api/submit (records+outbox, anchor ASYNC).
+ * Uji live PER-INPUT AUDIT end-to-end: POST /api/v1/records dan
+ * POST /api/submit -- keduanya anchor SINKRON per input.
  *
  * Berbeda dari `test-records-write-live.js` yang menukar anchor dengan spy,
  * di sini anchor SUNGGUHAN dijalankan -- tetapi terhadap anvil lokal, bukan
@@ -12,9 +12,9 @@
  *        -> record + outbox commit, lalu `anchorkanRecordDb` meng-anchor ke
  *           kontrak dan menandai outbox `anchored`; respons memuat tx_hash.
  *   B. POST /api/submit (form publik)
- *        -> record + outbox `pending` (peran operator, instansi operator),
- *           TIDAK menyentuh chain; baris itu anchorable (dibuktikan dengan
- *           memanggil mesin anchor yang sama seperti worker).
+ *        -> record + outbox commit (peran operator, instansi operator), lalu
+ *           anchor SINKRON per input ke kontrak; respons memuat tx_hash dan
+ *           outbox `anchored`.
  *
  * Prasyarat: DATABASE_URL (untuk record/outbox) + artefak Foundry + biner
  * anvil. Bila salah satu tidak ada, uji DILEWATI dengan exit 0.
@@ -229,7 +229,7 @@ async function main() {
       await terpasang.isAnchored(ka.body.record_id, 1), true);
 
     // =======================================================================
-    console.log('\n=== B. POST /api/submit: records+outbox pending (anchor async) ===');
+    console.log('\n=== B. POST /api/submit: records+outbox + anchor SINKRON per input ===');
     // =======================================================================
 
     // Sheets palsu: form menulis ke sini, bukan ke Google.
@@ -246,8 +246,9 @@ async function main() {
     const nikForm = '3273' + String(Date.now()).slice(-12);
     const kf = await kirim('/api/submit', { tanpaKunci: true }, tubuh({ nik: nikForm, nama_lengkap: 'Uji Form PIA' }));
     eq('submit: 200', kf.status, 200);
-    eq('respons: status anchor = pending', kf.body && kf.body.anchor && kf.body.anchor.status, 'pending');
+    eq('respons: status anchor = anchored', kf.body && kf.body.anchor && kf.body.anchor.status, 'anchored');
     ok('respons: ada record_id', !!(kf.body && kf.body.anchor && kf.body.anchor.record_id));
+    ok('respons: tx_hash ada', /^0x[0-9a-f]{64}$/i.test((kf.body && kf.body.anchor && kf.body.anchor.tx_hash) || ''));
     app.setSheets(null);
 
     const recF = (await utama.query(
@@ -262,20 +263,10 @@ async function main() {
       'SELECT chain_status, tx_hash, commitment FROM chain_outbox WHERE record_id = $1 AND version = 1',
       [kf.body.anchor.record_id]
     )).rows[0];
-    eq('outbox: pending (belum anchor)', obF && obF.chain_status, 'pending');
-    eq('outbox: tx_hash null', obF && obF.tx_hash, null);
+    eq('outbox: chain_status anchored', obF && obF.chain_status, 'anchored');
+    eq('outbox: tx_hash = respons', obF && obF.tx_hash, kf.body.anchor.tx_hash);
     eq('outbox: commitment = respons', obF && obF.commitment, kf.body.anchor.commitment);
-
-    // Baris itu harus anchorable mesin anchor yang sama seperti worker.
-    const hasilF = await anchorRecord.anchorkan({
-      record_id: kf.body.anchor.record_id,
-      version: 1,
-      commitment: obF.commitment,
-      jenis_sasaran: 'Catin',
-      supersedes_id: null,
-    });
-    eq('mesin anchor: ok', hasilF.ok, true);
-    eq('on-chain: isAnchored(record_id form,1) = true',
+    ok('on-chain: isAnchored(record_id form,1) = true',
       await terpasang.isAnchored(kf.body.anchor.record_id, 1), true);
 
     server.close();
