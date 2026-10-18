@@ -221,15 +221,26 @@ async function main() {
   // endpoint ini pakai identitas agency yang sama; pastikan kuota dipakai
   // tapi tidak membuat semua submit jadi 429.
   let suksesBerturut = 0;
+  let rrTerakhir = null;
   for (let i = 0; i < 5; i++) {
-    const rr = await minta('/api/submit', { method: 'POST', body: PAYLOAD });
-    if (rr.status === 200) suksesBerturut++;
+    rrTerakhir = await minta('/api/submit', { method: 'POST', body: PAYLOAD });
+    if (rrTerakhir.status === 200) suksesBerturut++;
   }
   await settle();
   eq('lima submit berturut-turut semua 200', suksesBerturut, 5);
   eq('lima baris tercatat', sheets._catatan.append, 7);
   const e5 = terakhir();
   eq('entri terakhir sukses', e5.result, 'success');
+
+  // Justru karena /api/submit ikut JALUR_PUBLIK (tanpa kunci), kuota WAJIB
+  // tetap jalan di sini: menonaktifkan autentikasi tanpa memasang jatah sama
+  // dengan membuka pintu tulis tak terbatas ke Google Sheets. Header ini satu-
+  // satunya cara lewat HTTP untuk memastikan limiter dipanggil di route ini.
+  ok('submit keluar dari limiter (header RateLimit ada)',
+    rrTerakhir.headers['ratelimit-limit'] !== undefined);
+  ok('sisa kuota submit terbaca dan terbatas',
+    Number.isFinite(Number(rrTerakhir.headers['ratelimit-remaining']))
+    && Number(rrTerakhir.headers['ratelimit-limit']) > 0);
 
   console.log('\nlulus: ' + lulus + '  gagal: ' + gagal);
   if (gagal === 0) console.log('SEMUA UJI LOLOS');

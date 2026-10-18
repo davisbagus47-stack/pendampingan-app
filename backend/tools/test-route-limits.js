@@ -139,10 +139,17 @@ async function main() {
   const lain = await minta(port, '/api/sasaran', { 'x-agency-id': 'ag-rl-2' });
   ok('instansi lain tidak ikut kena', lain.status !== 429);
 
+  // `/api/sasaran` termasuk JALUR_PUBLIK (form TPK). Tanpa identitas sama sekali
+  // ia tidak lagi 429, karena halaman form memang tidak mengirim apa pun --
+  // kalau tetap ditolak, form publik tidak akan bisa memuat pencarian sama
+  // sekali. Yang diganti adalah BASIS kuncinya: identitas '' jatuh ke kunci
+  // bersama 'publik', jadi tetap dibatasi kuota, bukan lolos begitu saja.
+  // Route non-publik tanpa identitas masih 429 seperti biasa.
   const tanpaHeader = await minta(port, '/api/sasaran', {});
-  eq('tanpa identitas ditolak 429', tanpaHeader.status, 429);
-  const bodyTanpa = json(tanpaHeader.body);
-  eq('alasannya agency tidak dikenal', bodyTanpa && bodyTanpa.code, 'RATE_LIMITED');
+  eq('jalur publik tanpa identitas tetap dibatasi kuota', tanpaHeader.status, 200);
+  const sisaPublik = Number(tanpaHeader.headers['ratelimit-remaining']);
+  ok('kuota jalur publik memakai kunci bersama (bukan tak terbatas)',
+    Number.isFinite(sisaPublik) && sisaPublik >= 0);
 
   console.log('\n=== 3. Validasi MENJALAN sebelum sumber data disentuh ===');
 

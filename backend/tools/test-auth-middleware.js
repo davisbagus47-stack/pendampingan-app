@@ -8,6 +8,10 @@
  *
  * Database tidak dibutuhkan: `setCariKunci` menerima fungsi pencarian yang
  * dibuat di sini, sama seperti `spyGetSheets` untuk Google Sheets.
+ *
+ * Catatan jalur: `/api/sasaran` dan `/api/submit` masuk JALUR_PUBLIK (form TPK
+ * tidak bisa menyimpan kunci API), jadi uji penolakan memakai `/api/audit/status`
+ * yang tetap wajib kunci. Bagian 10 menguji sisi publiknya.
  */
 
 const http = require('http');
@@ -60,6 +64,27 @@ function minta(path, headers) {
   });
 }
 
+/** Permintaan POST JSON tanpa kunci -- untuk jalur publik form. */
+function mintaPost(path, body) {
+  const data = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1', port, path, method: 'POST',
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) },
+      },
+      (res) => {
+        let b = '';
+        res.on('data', (c) => { b += c; });
+        res.on('end', () => resolve({ status: res.statusCode, body: b, headers: res.headers }));
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Kunci uji
 // ---------------------------------------------------------------------------
@@ -105,6 +130,10 @@ app.limiter.aturKonfigurasi('id-42', { kuota: 100000, jendelaMs: 60000, burst: 0
 app.limiter.aturKonfigurasi('id-43', { kuota: 100000, jendelaMs: 60000, burst: 0 });
 app.limiter.aturKonfigurasi('id-44', { kuota: 100000, jendelaMs: 60000, burst: 0 });
 app.limiter.aturKonfigurasi('id-45', { kuota: 100000, jendelaMs: 60000, burst: 0 });
+// Jalur publik memakai kunci sintetis 'publik' (lihat KUNCI_PUBLIK di index.js).
+// Konfigurasinya sudah dipasang saat modul dimuat; ditegaskan di sini supaya
+// urutan muat modul tidak bisa diam-diam menjatuhkan uji ini.
+app.limiter.aturKonfigurasi('publik', { kuota: 100000, jendelaMs: 60000, burst: 0 });
 
 app.gantiAccessLogger(loggerUji);
 app.setCariKunci(cariKunciUji);
@@ -120,7 +149,7 @@ async function main() {
   console.log('=== 1. Kunci valid diterima ===');
 
   tertangkap = [];
-  let r = await minta('/api/sasaran', AUTH(tokenAktif));
+  let r = await minta('/api/audit/status', AUTH(tokenAktif));
   await settle();
   eq('kunci primary tidak ditolak', r.status, 200);
 
@@ -136,7 +165,7 @@ async function main() {
   console.log('=== 2. Kredensial ditolak ===');
 
   tertangkap = [];
-  r = await minta('/api/sasaran', {});
+  r = await minta('/api/audit/status', {});
   await settle();
   eq('tanpa kunci = 401', r.status, 401);
   eq('kode MISSING_KEY', JSON.parse(r.body).code, auth.KODE.MISSING);
@@ -144,12 +173,12 @@ async function main() {
   eq('penolakan tercatat sebagai denied_auth', e2.result, 'denied_auth');
   eq('kode alasan masuk params', e2.params.auth_code, auth.KODE.MISSING);
 
-  r = await minta('/api/sasaran', { authorization: 'Bearer tokenNgawur' });
+  r = await minta('/api/audit/status', { authorization: 'Bearer tokenNgawur' });
   await settle();
   eq('token salah bentuk = 401', r.status, 401);
   eq('kode MALFORMED_KEY', JSON.parse(r.body).code, auth.KODE.MALFORMED);
 
-  r = await minta('/api/sasaran', AUTH(tokenRevoked));
+  r = await minta('/api/audit/status', AUTH(tokenRevoked));
   await settle();
   eq('kunci dicabut = 401', r.status, 401);
   eq('kode KEY_REVOKED', JSON.parse(r.body).code, auth.KODE.REVOKED);
@@ -158,12 +187,12 @@ async function main() {
   // Ini yang paling berharga saat insiden: kunci dicabut TAPI masih dipakai.
   eq('kunci dicabut yang dipakai tercatat dengan agency-nya', e3.params.agency_id, 44);
 
-  r = await minta('/api/sasaran', AUTH(tokenStandby));
+  r = await minta('/api/audit/status', AUTH(tokenStandby));
   await settle();
   eq('kunci cadangan = 401', r.status, 401);
   eq('kode KEY_STANDBY', JSON.parse(r.body).code, auth.KODE.STANDBY);
 
-  r = await minta('/api/sasaran', { authorization: 'abc123' });
+  r = await minta('/api/audit/status', { authorization: 'abc123' });
   await settle();
   eq('Authorization tanpa Bearer = 401', r.status, 401);
   eq('kode MALFORMED_KEY untuk header salah format', JSON.parse(r.body).code, auth.KODE.MALFORMED);
@@ -173,7 +202,7 @@ async function main() {
 
   tertangkap = [];
   const tokenSalah = 'pa_sk_live_' + 'A'.repeat(43);
-  await minta('/api/sasaran', AUTH({ token: tokenSalah }));
+  await minta('/api/audit/status', AUTH({ token: tokenSalah }));
   await settle();
   const e4 = tertangkap[tertangkap.length - 1];
   ok('token utuh tidak muncul di entri log',
@@ -186,7 +215,7 @@ async function main() {
   // melihat "yang dikirim bukan token pa_sk_live_ sama sekali" tanpa pernah
   // melihat tokennya.
   const tokenCacat = 'sembilan-pastas-token';
-  await minta('/api/sasaran', AUTH({ token: tokenCacat }));
+  await minta('/api/audit/status', AUTH({ token: tokenCacat }));
   await settle();
   const e4b = tertangkap[tertangkap.length - 1];
   ok('token cacat utuh tidak masuk log',
@@ -195,7 +224,7 @@ async function main() {
     typeof e4b.params.token_shape === 'string' && e4b.params.token_shape.length < 40);
 
   // Klien tidak boleh diberi tahu hash atau agency mana yang cocok.
-  r = await minta('/api/sasaran', AUTH(tokenRevoked));
+  r = await minta('/api/audit/status', AUTH(tokenRevoked));
   await settle();
   ok('respons tidak menyebut agency',
     r.body.indexOf('"44"') < 0 && r.body.indexOf('agency') < 0);
@@ -207,11 +236,11 @@ async function main() {
   // -------------------------------------------------------------------------
   console.log('=== 4. Scope = 403, bukan 401 ===');
 
-  r = await minta('/api/sasaran?kategori_1=a', AUTH(tokenKatA));
+  r = await minta('/api/audit/status?kategori_1=a', AUTH(tokenKatA));
   await settle();
   eq('kategori sesuai scope = boleh', r.status, 200);
 
-  r = await minta('/api/sasaran?kategori_1=c', AUTH(tokenKatA));
+  r = await minta('/api/audit/status?kategori_1=c', AUTH(tokenKatA));
   await settle();
   eq('kategori di luar scope = 403', r.status, 403);
   eq('kode KEY_SCOPE_DENIED', JSON.parse(r.body).code, auth.KODE.SCOPE);
@@ -220,7 +249,7 @@ async function main() {
 
   // Tanpa filter kategori berarti "semua kategori". Kunci yang dibatasi satu
   // kategori tidak boleh mendapat itu.
-  r = await minta('/api/sasaran', AUTH(tokenKatA));
+  r = await minta('/api/audit/status', AUTH(tokenKatA));
   await settle();
   eq('scope tanpa filter kategori = 403', r.status, 403);
 
@@ -230,7 +259,7 @@ async function main() {
   // Kalau kuota dihitung lebih dulu, kunci dicabut akan memakai jatah kuota
   // sebelum ditolak. Dan Authorization 401 harus TIDAK menghasilkan 429.
   const sebelum = tertangkap.length;
-  r = await minta('/api/sasaran', AUTH(tokenRevoked));
+  r = await minta('/api/audit/status', AUTH(tokenRevoked));
   await settle();
   eq('401 bukan 429', r.status, 401);
   ok('tidak ada header RateLimit pada penolakan auth',
@@ -252,16 +281,18 @@ async function main() {
   eq('404 tetap tercatat di access_log', e6.result, 'error');
 
   // -------------------------------------------------------------------------
-  console.log('=== 7. Kuota memakai agency_id terverifikasi ===');
+  console.log('=== 7. Kuota tetap diterapkan pada jalur publik ===');
 
-  // Nama kuncinya terlihat di header X-RateLimit-Remaining: kalau string
-  // kuncinya yang jadi basis kuota, mengganti token akan mendapat jatah baru
-  // -- persis yang harus dicegah.
-  const r1 = await minta('/api/sasaran', AUTH(tokenAktif));
-  const r2 = await minta('/api/sasaran', AUTH(tokenAktif));
+  // `/api/sasaran` masuk daftar JALUR_PUBLIK, jadi kunci di sini sengaja TIDAK
+  // dikirim: yang diuji adalah bahwa jalur publik tidak lolos dari penghitungan
+  // kuota. Identitasnya jatuh ke '' (tak terverifikasi), dan itulah basis
+  // kuncinya -- bukan token yang bisa diganti-ganti untuk mendapat jatah baru.
+  const r1 = await minta('/api/sasaran', {});
+  const r2 = await minta('/api/sasaran', {});
   await settle();
   const rem1 = Number(r1.headers['ratelimit-remaining']);
   const rem2 = Number(r2.headers['ratelimit-remaining']);
+  eq('jalur publik bukan 429', r1.status, 200);
   ok('sisa kuota berkurang pada permintaan kedua', rem2 < rem1);
   ok('sisa kuota dihitung dari agency_id, bukan token',
     app.kunciKuota({ agencyId: 42, terverifikasi: true }) === 'id-42');
@@ -275,7 +306,7 @@ async function main() {
   // jalan, karenaseluruh server harus bisa dijalankan sebelum F1.8a.
   app.setCariKunci(null);
   tertangkap = [];
-  const rLegacy = await minta('/api/sasaran', { 'x-agency-id': 'ag-legacy' });
+  const rLegacy = await minta('/api/audit/status', { 'x-agency-id': 'ag-legacy' });
   await settle();
   eq('mode legacy tetap memakai header', rLegacy.status, 200);
   const e7 = tertangkap[tertangkap.length - 1];
@@ -302,6 +333,44 @@ async function main() {
   ok('baris uji ditemukan lewat hash yang sama',
     BARIS[auth.hashToken(tokenAktif.token)] !== undefined);
   ok('cariKunci dipanggil untuk token berbentuk benar', dipanggilCari > 0);
+
+  // -------------------------------------------------------------------------
+  console.log('=== 10. Jalur form publik tidak butuh kunci ===');
+
+  // Sengaja memakai jalur yang SAMA dengan form TPK. Kalau daftar JALUR_PUBLIK
+  // salah (mis. path tanpa metode, atau kecualian yang merembet ke route
+  // tetangga), bagian inilah yang menangkapnya.
+  tertangkap = [];
+  r = await minta('/api/sasaran', {});
+  await settle();
+  eq('GET /api/sasaran terbuka tanpa kunci', r.status, 200);
+
+  // Kecualian tidak boleh merembet: route lain di /api tetap tertutup.
+  r = await minta('/api/audit/status', {});
+  await settle();
+  eq('GET /api/audit/status tetap 401 tanpa kunci', r.status, 401);
+
+  // POST /api/submit juga publik. Yang diuji bukan cara menulis ke Sheets
+  // (urusan test-submit.js), melainkan bahwa jalurnya tidak ditolak middleware.
+  app.setSheets(() => ({
+    spreadsheets: {
+      values: {
+        async get() { return { data: { values: [['No']] } }; },
+        async update() { return { data: {} }; },
+        async append() { return { data: { updates: { updatedRange: 'Sheet1!A2' } } }; },
+      },
+    },
+  }));
+
+  const payloadPublik = {
+    nik: '3201010101800001', namaLengkap: 'Uji Publik',
+    namaTPK: 'TPK Uji', peranTPK: 'Kader', namaDesa: 'Desa Uji',
+    jenisSasaran: 'Catin', tanggalKunjungan: '31 Des 2024',
+  };
+  r = await mintaPost('/api/submit', payloadPublik);
+  await settle();
+  eq('POST /api/submit terbuka tanpa kunci', r.status, 200);
+  app.setSheets(null);
 
   console.log('\nlulus: ' + lulus + '  gagal: ' + gagal);
   if (gagal === 0) console.log('SEMUA UJI LOLOS');

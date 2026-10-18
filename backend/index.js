@@ -109,11 +109,58 @@ function kunciKuota(identitas) {
   return identitas.terverifikasi ? 'id-' + identitas.agencyId : identitas.agencyId;
 }
 
+// ---------------------------------------------------------------------------
+// Jalur publik form TPK (FR-4.4 vs FR-4.1).
+//
+// Form pendampingan adalah halaman publik: TPK membuka browser, mengisi data
+// kunjungan, lalu menutup. Halaman semacam itu TIDAK BISA menyimpan kunci API
+// dengan aman -- kunci yang disimpan di build front-end sama dengan kunci
+// yang dikirim ke setiap orang yang membuka form. Jadi kewajiban kunci tidak
+// masuk akal untuk dua endpoint yang dipakai form itu.
+//
+// Daftarnya sengaja pendek, eksplisit, dan memuat METODE. Kalau hanya path
+// yang didaftarkan, satu route baru yang menumpang path yang sama bisa ikut
+// terbuka tanpa disadari. Route yang TIDAK ada di sini tetap wajib kunci
+// secara default, termasuk route yang belum ditulis hari ini.
+// ---------------------------------------------------------------------------
+const JALUR_PUBLIK = new Set([
+  'GET /api/sasaran',
+  'POST /api/submit',
+]);
+
+function jalurPublik(req) {
+  // `originalUrl` dipakai, bukan `req.path`: middleware ini dipasang di '/api',
+  // jadi `req.url` sudah dipotong mount path dan bisa berbeda antar Express 4/5.
+  const jalur = String((req && (req.originalUrl || req.url)) || '').split('?')[0];
+  return JALUR_PUBLIK.has(String((req && req.method) || '') + ' ' + jalur);
+}
+
+// Identitas rate-limit untuk jalur publik.
+//
+// Limiter menolak permintaan tanpa identitas instansi (`rate-limit.js`), dan
+// halaman TPK tidak mengirim `x-agency-id` maupun kunci. Tanpa kunci sintetis
+// di sini, jalur publik selalu kena 429 -- "melindungi" sampai-sampai
+// tidak ada yang bisa memakai form. Satu kunci bersama berarti semua
+// pengunjung publik berbagi satu jatah, jadi kuotanya dibuat longgar: cukup
+// untuk menahan lonjakan Google Sheets API tanpa menghambat operator sungguhan.
+const KUNCI_PUBLIK = 'publik';
+
+// Kuota jalur publik. Dibaca sekali saat modul dimuat; sifatnya "cukup longgar
+// untuk form, tetap ada untuk menahan lonjakan". Nilai sengaja bukan BAWAAN
+// (60/menit): BAWAAN dihitung per instansi, sedangkan di sini semua
+// pengunjung publik berbagi satu kunci.
+limiter.aturKonfigurasi(KUNCI_PUBLIK, { kuota: 600, jendelaMs: 60000, burst: 60 });
+
 /**
  * Middleware autentikasi.
  *
  * Hanya menolak kalau `cariKunci` terpasang. Tanpa itu, sistem dalam mode
  * legacy dan behaved seperti sebelumnya: header dibaca, tidak diverifikasi.
+ *
+ * Jalur form publik (lihat JALUR_PUBLIK di atas) dilewati sepenuhnya: tanpa
+ * key, tanpa identitas, dan tanpa `actor_id`. Ditekankan di sini karena ini
+ * satu-satunya titik di mana "dilindungi" tidak berarti "untuk semua orang":
+ * route yang tidak masuk daftar publik tetap ditutup rapat-rapat.
  *
  * Penolakan SELALU dicatat di access_log, termasuk kode alasan (`KEY_REVOKED`,
  * `KEY_STANDBY`, ...) yang tidak terkirim ke klien. Kalau tidak, "kunci dicabut
@@ -121,6 +168,11 @@ function kunciKuota(identitas) {
  * paling berharga saat insiden kebocoran.
  */
 async function autentikasi(req, res, next) {
+  if (jalurPublik(req)) {
+    req.kunci = null;
+    return next();
+  }
+
   if (!cariKunci) {
     req.kunci = null;
     return next();
@@ -163,9 +215,16 @@ async function autentikasi(req, res, next) {
 function terapkanRateLimit(req, res) {
   const agencyId = agencyIdDari(req);
   // Kuota dihitung per agency_id yang sudah terverifikasi kalau kuncinya ada.
-  // Di mode legacy `kunciKuota` mengembalikan isi header apa adanya, jadi
+  // Dalam mode legacy `kunciKuota` mengembalikan isi header apa adanya, jadi
   // perilaku lama tidak berubah -- hanya sekarang dibedakan, bukan disamarkan.
-  const hasil = limiter.periksa(kunciKuota(agencyId));
+  //
+  // `|| KUNCI_PUBLIK` hanya berlaku kalau identitasnya KOSONG sama sekali: tanpa
+  // itu jalur publik selalu kena 429 (rate-limit.js menolak identitas kosong).
+  // Header legacy tetap menang lebih dulu, jadi per-isolasi per-instansi di
+  // mode legacy tidak berubah -- dan route non-publik tanpa identitas tetap
+  // ditolak seperti biasa.
+  const kunci = kunciKuota(agencyId) || (jalurPublik(req) ? KUNCI_PUBLIK : '');
+  const hasil = limiter.periksa(kunci);
   const headers = rateLimit.headerRateLimit(hasil);
   for (const k of Object.keys(headers)) res.set(k, headers[k]);
   return { agencyId: agencyId.agencyId, hasil };
@@ -739,6 +798,9 @@ const validate = (body) => {
 // route baru yang bisa lupa memanggilnya, dan route yang ditambahkan nanti
 // otomatis ikut terlindungi. `app.use` juga menutup 404, yang kalau tidak
 // akan lolos tanpa pernah dicek.
+//
+// Pengecualian tunggal: jalur form publik (JALUR_PUBLIK di atas). Sisanya,
+// termasuk route yang belum ditulis, tetap wajib kunci.
 app.use('/api', autentikasi);
 
 app.get('/', (req, res) => {
@@ -1677,6 +1739,17 @@ app.post('/api/v1/records', async (req, res) => {
 
 app.post('/api/submit', async (req, res) => {
   try {
+    // FR-4.5: kuota dulu, seperti /api/sasaran. Route ini sengaja masuk
+    // JALUR_PUBLIK (TPK tidak bisa menyimpan kunci), jadi TANPA baris ini
+    // penulisan akan terbuka lebar tanpa jatah sama sekali -- dan penulisan
+    // mengisi Google Sheets, bukan sekali baca. Kuotanya memakai kunci bersama
+    // 'publik' karena pengirim form tidak punya identitas instansi.
+    const { agencyId, hasil } = terapkanRateLimit(req, res);
+    if (!hasil.allowed) {
+      kirimRateLimit(res, agencyId, hasil);
+      return;
+    }
+
     const body = req.body || {};
     const errors = validate(body);
 
