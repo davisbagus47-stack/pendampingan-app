@@ -211,6 +211,18 @@ async function main() {
     app.limiter.aturKonfigurasi('id-9988777', { kuota: 100000, jendelaMs: 60000, burst: 0 });
     app.gantiAccessLogger(loggerUji);
 
+    // Anchor sinkron per-record pada POST /api/v1/records dapat menyiarkan
+    // transaksi Sepolia SUNGGUHAN (ANCHOR_* ada di .env). Suite ini menguji
+    // jalur TULIS (F3.2/F3.3), bukan anchoring (F3.4), jadi titik suntiknya
+    // ditukar dengan SPY: memastikan route memanggilnya dengan metadata benar
+    // dan meneruskan `anchor` ke respons, tanpa menyentuh blockchain. Returning
+    // `pending` sengaja: outbox harus tetap pending seperti komitmen F3.3.
+    let panggilanAnchor = [];
+    app.setAnchorkanRecord(async (ringkas, meta) => {
+      panggilanAnchor.push({ ringkas: ringkas, meta: meta });
+      return { status: 'pending', error: 'uji: anchor dimatikan' };
+    });
+
     // -----------------------------------------------------------------------
     // 1. Create: 201, metadata benar, commitment dapat dihitung ulang
     // -----------------------------------------------------------------------
@@ -226,6 +238,15 @@ async function main() {
     eq('commitment = milik pemilik (dapat dihitung ulang)',
       k.body.commitment, c.commitment(k.body.record_hash, tanda + '-a'));
     eq('tercatat success di access log', hasilTerakhir(), 'success');
+
+    // Route memanggil anchor sinkron dengan metadata yang benar, dan hasilnya
+    // diteruskan ke respons. (Anchor-nya di-stub; lihat pemasangan spy di atas.)
+    eq('respons memuat status anchor', k.body.anchor && k.body.anchor.status, 'pending');
+    eq('anchor dipanggil sekali', panggilanAnchor.length, 1);
+    eq('anchor menerima record_id yang ditulis',
+      panggilanAnchor[0].ringkas.record_id, k.body.record_id);
+    eq('anchor menerima commitment yang sama', panggilanAnchor[0].ringkas.commitment, k.body.commitment);
+    eq('anchor menerima jenis sasaran', panggilanAnchor[0].meta.jenis_sasaran, 'Baduta');
 
     const rowV1 = (await utama.query(
       'SELECT payload_json, institution_id, version, created_by, record_hash FROM records WHERE record_id = $1',

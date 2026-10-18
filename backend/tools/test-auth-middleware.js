@@ -367,6 +367,9 @@ async function main() {
     namaTPK: 'TPK Uji', peranTPK: 'Kader', namaDesa: 'Desa Uji',
     jenisSasaran: 'Catin', tanggalKunjungan: '31 Des 2024',
   };
+  // Jalur form sukses menyentuh per-input audit (records+outbox). Uji ini tidak
+  // bermaksud menulis database, jadi titik suntiknya dimatikan.
+  app.setCatatFormAudit(null);
   r = await mintaPost('/api/submit', payloadPublik);
   await settle();
   eq('POST /api/submit terbuka tanpa kunci', r.status, 200);

@@ -19,12 +19,38 @@ const apiKeyAuth = require('./lib/api-key-auth.js');
 const db = require('./lib/db.js');
 const recordsQuery = require('./lib/records-query.js');
 const recordsWrite = require('./lib/records-write.js');
+const anchorRecord = require('./lib/anchor-record.js');
 const canonical = require('./lib/canonical.js');
 const auditLogChain = require('./lib/audit-log-chain.js');
 const zkpAudit = require('./lib/zkp-audit.js');
 const config = require('./lib/config.js');
 const { columnName } = require('./lib/field-types');
 const { deriveSections } = require('./lib/sections.js');
+
+// Titik suntik untuk pencatatan `records`+`chain_outbox` dari jalur form publik
+// (per-input audit). Bawaannya fungsi sungguhan `catatRecordForm`; uji yang
+// menjalankan /api/submit sukses TANPA ingin menyentuh PostgreSQL mematikannya
+// dengan `setCatatFormAudit(null)`. Pola ini sama dengan `setSheets` dan
+// `setCariKunci`: perilaku ber-I/O ditukar eksplisit, bukan lewat env yang ada
+// atau tidak ada.
+let catatFormAudit = null;
+
+// Titik suntik untuk anchor per-record SINKRON pada POST /api/v1/records.
+// Bawaannya `anchorkanRecordDb` (menyentuh Sepolia sungguhan). Uji live jalur
+// tulis yang tidak bermaksud menyiarkan transaksi menukarnya dengan stub,
+// supaya DATABASE_URL+ANCHOR_* yang ada di .env tidak membakar gas saat uji.
+let anchorkanRecord = null;
+
+// Titik suntik penyapu outbox untuk endpoint cron serverless (GET
+// /api/cron/anchor). Bawaannya `sapuAnchorDb` (memanggil `tools/worker-anchor`).
+// Uji menukarnya dengan stub supaya bisa memeriksa kendali CRON_SECRET tanpa
+// menyentuh database maupun menyiarkan transaksi.
+let sapuAnchor = null;
+
+// Taksonomi ADR-5. Record yang jenisnya di luar ini tidak boleh masuk jalur
+// audit form; lebih baik dilewati dengan alasan jelas daripada menabrak CHECK
+// database yang pesannya jauh dari route ini.
+const TAKSONOMI_SASARAN = new Set(['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta']);
 
 // FR-4.4: setiap pemanggilan, berhasil maupun gagal, masuk satu log akses.
 // Dipasang sebelum semua route, karena yang dipasang adalah responsnya --
@@ -110,22 +136,30 @@ function kunciKuota(identitas) {
 }
 
 // ---------------------------------------------------------------------------
-// Jalur publik form TPK (FR-4.4 vs FR-4.1).
+// Jalur yang melewati kunci API instansi (FR-4.4 vs FR-4.1).
 //
-// Form pendampingan adalah halaman publik: TPK membuka browser, mengisi data
-// kunjungan, lalu menutup. Halaman semacam itu TIDAK BISA menyimpan kunci API
-// dengan aman -- kunci yang disimpan di build front-end sama dengan kunci
-// yang dikirim ke setiap orang yang membuka form. Jadi kewajiban kunci tidak
-// masuk akal untuk dua endpoint yang dipakai form itu.
+// Dua alasan berbeda, satu mekanisme:
+//   1. Form pendampingan adalah halaman publik: TPK membuka browser, mengisi
+//      data kunjungan, lalu menutup. Halaman semacam itu TIDAK BISA menyimpan
+//      kunci API dengan aman -- kunci yang disimpan di build front-end sama
+//      dengan kunci yang dikirim ke setiap orang yang membuka form. Jadi
+//      kewajiban kunci tidak masuk akal untuk dua endpoint yang dipakai form.
+//   2. Cron serverless (Vercel Cron) juga tidak membawa kunci instansi; ia
+//      mengautentikasi dirinya sendiri lewat CRON_SECRET di handler-nya.
 //
 // Daftarnya sengaja pendek, eksplisit, dan memuat METODE. Kalau hanya path
 // yang didaftarkan, satu route baru yang menumpang path yang sama bisa ikut
 // terbuka tanpa disadari. Route yang TIDAK ada di sini tetap wajib kunci
-// secara default, termasuk route yang belum ditulis hari ini.
+// secara default, termasuk route yang belum ditulis hari ini. Setiap entri
+// yang ditambahkan WAJIB mengautentikasi dirinya sendiri di dalam handler.
 // ---------------------------------------------------------------------------
 const JALUR_PUBLIK = new Set([
   'GET /api/sasaran',
   'POST /api/submit',
+  // Cron serverless (Vercel Cron) tidak membawa kunci API instansi; ia
+  // mengautentikasi dirinya sendiri lewat CRON_SECRET di handler. Karena itu ia
+  // harus melewati gerbang kunci API di sini -- kalau tidak, ia selalu 401.
+  'GET /api/cron/anchor',
 ]);
 
 function jalurPublik(req) {
@@ -1531,6 +1565,123 @@ function galatTulisDariPg(e) {
   return e;
 }
 
+/**
+ * Anchor SATU record secara sinkron, lalu tandai baris outbox-nya `anchored`
+ * (F3.4 lanjutan). Dipakai jalur tulis ber-kunci instansi, yang volumenya
+ * terkendali sehingga menunggu transaksi blockchain dapat diterima.
+ *
+ * Anchor bersifat "advisory": kegagalan chain TIDAK menggagalkan penulisan.
+ * Record dan baris outbox sudah commit; yang tersisa hanyalah menandai. Bila
+ * gagal, baris tetap `pending` dan worker (`tools/worker-anchor.js`) akan
+ * menyapunya nanti.
+ *
+ * @returns {Promise<{status:string, tx_hash?:string, error?:string}>}
+ */
+async function anchorkanRecordDb(ringkas, meta) {
+  const hasil = await anchorRecord.anchorkan({
+    record_id: ringkas.record_id,
+    version: ringkas.version,
+    commitment: ringkas.commitment,
+    jenis_sasaran: meta && meta.jenis_sasaran,
+    supersedes_id: ringkas.supersedes_id,
+    old_record_id: meta && meta.old_record_id,
+    old_version: meta && meta.old_version,
+  });
+
+  if (!hasil.ok) {
+    return { status: 'pending', error: hasil.error || null };
+  }
+
+  // Penanda outbox dijalankan peran `operator`: policy chain_outbox_operator_only
+  // mengizinkan UPDATE, sementara INSERT-nya tadi dilakukan peran `agency`.
+  // Kegagalan di sini tidak fatal -- anchor on-chain sudah terjadi.
+  await db.transaksi({ role: 'operator' }, async (client) => {
+    await client.query(
+      "UPDATE chain_outbox SET chain_status = 'anchored', tx_hash = $1," +
+      ' anchored_at = now(), last_error = NULL' +
+      " WHERE record_id = $2 AND version = $3 AND chain_status = 'pending'",
+      [hasil.tx_hash, ringkas.record_id, ringkas.version]
+    );
+  }).catch(() => {});
+
+  return { status: 'anchored', tx_hash: hasil.tx_hash };
+}
+
+// Pasang implementasi sungguhan sebagai bawaan titik suntik anchor.
+anchorkanRecord = anchorkanRecordDb;
+
+/**
+ * Catat satu kiriman form publik sebagai `records` + `chain_outbox` (F3.3).
+ *
+ * Form tidak membawa kunci instansi, jadi penulisan berjalan peran `operator`
+ * dengan `institution_id` = instansi operator yang di-seed
+ * (`tools/seed-operator.js`). Outbox ditulis `pending`: anchor-nya dilakukan
+ * worker, bukan di dalam request -- supaya form publik tidak menyiarkan
+ * transaksi berbayar per kiriman (mudah disalahgunakan) dan tidak menggantung
+ * menunggu konfirmasi.
+ *
+ * Selalu mengembalikan objek ringkas (tidak pernah melempar untuk kondisi
+ * wajar): DB tidak ada, instansi belum di-seed, atau jenis di luar taksonomi
+ * hanya menghasilkan `status: 'skipped'` dengan alasan, dan penulisan Sheets
+ * yang sudah sukses tetap sukses.
+ *
+ * @param {object} body payload form
+ * @returns {Promise<{status:string, record_id?:string, commitment?:string, reason?:string}>}
+ */
+async function catatRecordForm(body) {
+  if (!db.urlDatabase()) {
+    return { status: 'skipped', reason: 'DB_UNAVAILABLE' };
+  }
+  const kunci = String(process.env.FORM_INSTITUTION_KEY || 'operator-data-center').trim();
+  const { map: sectionMap } = deriveSections();
+
+  return db.transaksi({ role: 'operator' }, async (client) => {
+    const ag = (await client.query(
+      'SELECT institution_key FROM agencies WHERE institution_key = $1',
+      [kunci]
+    )).rows[0];
+    if (!ag) {
+      return { status: 'skipped', reason: 'INSTITUTION_NOT_SEEDED', institution_key: kunci };
+    }
+
+    const rec = recordsWrite.bangunRecord({
+      body,
+      fieldOrder: FIELD_ORDER,
+      institutionId: ag.institution_key,
+      sectionMap,
+      normalizeSasaran: (v) => NORMALIZE_SASARAN[String(v).trim().toLowerCase()] || v,
+      normalizeNik,
+      recordId: crypto.randomUUID(),
+      version: 1,
+      supersedesId: null,
+    });
+
+    const jenis = rec.payload_json.jenisSasaran;
+    if (!TAKSONOMI_SASARAN.has(jenis)) {
+      return { status: 'skipped', reason: 'JENIS_UNKNOWN', jenis: jenis || null };
+    }
+
+    const { columns, values } = recordsWrite.kolomDanNilai(rec, FIELD_ORDER, 'form-publik');
+    const tempat = values.map((_, i) => '$' + (i + 1)).join(', ');
+    await client.query(
+      'INSERT INTO records (' + columns.join(', ') + ') VALUES (' + tempat + ')',
+      values
+    );
+
+    const outbox = recordsWrite.barisOutbox(rec, ag.institution_key);
+    await client.query(
+      'INSERT INTO chain_outbox (record_id, version, supersedes_id, commitment)' +
+      ' VALUES ($1, $2, $3, $4)',
+      [outbox.record_id, outbox.version, outbox.supersedes_id, outbox.commitment]
+    );
+
+    return { status: 'pending', record_id: rec.record_id, commitment: outbox.commitment };
+  });
+}
+
+// Pasang implementasi sungguhan sebagai bawaan titik suntik.
+catatFormAudit = catatRecordForm;
+
 app.post('/api/v1/records', async (req, res) => {
   try {
     if (!db.urlDatabase()) {
@@ -1600,6 +1751,10 @@ app.post('/api/v1/records', async (req, res) => {
     });
 
     const { map: sectionMap } = deriveSections();
+
+    // Metadata untuk anchor on-chain; diisi di dalam transaksi, dipakai setelah
+    // commit (panggilan RPC tidak boleh berjalan di dalam transaksi DB terbuka).
+    let metaRantai = null;
 
     // Seluruh penulisan berjalan sebagai peran `agency` dengan klaim instansi
     // pemanggil, jadi RLS `records_agency_insert` menegakkan kepemilikan
@@ -1720,6 +1875,12 @@ app.post('/api/v1/records', async (req, res) => {
         [outbox.record_id, outbox.version, outbox.supersedes_id, outbox.commitment]
       );
 
+      metaRantai = {
+        jenis_sasaran: rec.payload_json.jenisSasaran,
+        old_record_id: kontrol.mode === 'correct' ? kontrol.recordId : null,
+        old_version: kontrol.mode === 'correct' ? kontrol.supersededVersion : null,
+      };
+
       return {
         record_id: rec.record_id,
         version: rec.version,
@@ -1729,9 +1890,13 @@ app.post('/api/v1/records', async (req, res) => {
       };
     });
 
+    // Anchor sinkron: setelah commit, di luar transaksi. Kegagalannya tidak
+    // menggagalkan penulisan (lihat `anchorkanRecordDb`).
+    const anchorRingkas = await anchorkanRecord(ringkas, metaRantai);
+
     const status = kontrol.mode === 'create' ? 201 : 200;
     accessLog.tandai(res, { result: accessLog.HASIL.SUKSES, responseRows: 1 });
-    res.status(status).json(Object.assign({ success: true }, ringkas));
+    res.status(status).json(Object.assign({ success: true }, ringkas, { anchor: anchorRingkas }));
   } catch (error) {
     kirimGalat(res, error);
   }
@@ -1780,16 +1945,78 @@ app.post('/api/submit', async (req, res) => {
       resource: { values: [[no, ...buildRow(body)]] },
     });
 
+    // Per-input audit: setelah baris Sheets sukses, catat juga `records` +
+    // `chain_outbox` (peran operator). Anchor on-chain TIDAK dilakukan di sini
+    // -- form publik tidak boleh menyiarkan transaksi berbayar per kiriman.
+    // Baris outbox `pending` disapu worker. Kegagalan pencatatan tidak
+    // menggagalkan submit: Sheets adalah tujuan utama form.
+    let auditForm;
+    try {
+      auditForm = typeof catatFormAudit === 'function'
+        ? await catatFormAudit(body)
+        : { status: 'skipped', reason: 'DISABLED' };
+    } catch (e) {
+      console.error(`[${new Date().toISOString()}] Gagal mencatat record form:`, e.message);
+      auditForm = { status: 'error' };
+    }
+
     accessLog.tandai(res, { result: accessLog.HASIL.SUKSES, responseRows: 1 });
     res.status(200).json({
       success: true,
       message: 'Data berhasil disimpan ke Google Sheets',
       row: result.data.updates ? result.data.updates.updatedRange : undefined,
+      anchor: auditForm,
     });
   } catch (error) {
     accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'INTERNAL_ERROR' });
     console.error(`[${new Date().toISOString()}] Gagal menyimpan data:`, error.message);
     res.status(500).json({ success: false, message: `Gagal menyimpan data ke Google Sheets: ${error.message}` });
+  }
+});
+
+// Penyapu outbox per-record untuk lingkungan serverless, tempat tidak ada
+// proses pekerja yang hidup terus. Vercel Cron memanggil GET /api/cron/anchor
+// berkala (lihat `crons` di vercel.json); satu panggilan = satu pass worker.
+// Batch dibatasi kecil supaya muat dalam batas durasi fungsi.
+async function sapuAnchorDb(batas) {
+  const worker = require('./tools/worker-anchor.js');
+  return worker.sekali({ batas: batas });
+}
+sapuAnchor = sapuAnchorDb;
+
+app.get('/api/cron/anchor', async (req, res) => {
+  // Vercel Cron menyisipkan `Authorization: Bearer <CRON_SECRET>` bila variabel
+  // lingkungan CRON_SECRET diset. Bila TIDAK diset, endpoint MENOLAK: endpoint
+  // yang menyiarkan transaksi berbayar tidak boleh terbuka hanya karena env lupa
+  // diisi. Ini juga menutup penyalahgunaan saat pengembangan.
+  const rahasia = String(process.env.CRON_SECRET || '').trim();
+  if (!rahasia) {
+    accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'CRON_SECRET_UNSET' });
+    return res.status(503).json({
+      success: false,
+      message: 'CRON_SECRET belum diset; endpoint cron dimatikan demi keamanan.',
+    });
+  }
+  if (String(req.get('authorization') || '') !== 'Bearer ' + rahasia) {
+    accessLog.tandai(res, { result: accessLog.HASIL.DENIED_AUTH, kode: 'CRON_UNAUTHORIZED' });
+    return res.status(401).json({ success: false, message: 'Tidak berwenang.' });
+  }
+  if (!db.urlDatabase()) {
+    accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'DB_UNAVAILABLE' });
+    return res.status(503).json({ success: false, message: 'DATABASE_URL belum diset.' });
+  }
+
+  const batas = Math.max(1, Math.min(50, Number(process.env.ANCHOR_CRON_BATCH) || 5));
+  try {
+    const ringkasan = typeof sapuAnchor === 'function'
+      ? await sapuAnchor(batas)
+      : { dibaca: 0, anchored: 0, retry: 0, failed: 0, diabaikan: 0, galat: 0, rincian: [] };
+    accessLog.tandai(res, { actorType: 'operator', result: accessLog.HASIL.SUKSES });
+    res.status(200).json({ success: true, batas, ringkasan });
+  } catch (error) {
+    accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'CRON_ANCHOR_ERROR' });
+    console.error(`[${new Date().toISOString()}] cron anchor gagal:`, error.message);
+    res.status(500).json({ success: false, message: `Penyapuan anchor gagal: ${error.message}` });
   }
 });
 
@@ -1843,6 +2070,16 @@ module.exports.setSheets = setSheets;
 // menyalakan atau mematikan autentikasi tidak boleh terjadi karena variabel
 // lingkungan yang ada/tidak ada.
 module.exports.setCariKunci = (fn) => { cariKunci = fn; };
+// Titik suntik per-input audit jalur form. `null` mematikannya, supaya uji
+// /api/submit sukses tidak menulis ke PostgreSQL meski DATABASE_URL diset.
+module.exports.setCatatFormAudit = (fn) => { catatFormAudit = fn; };
+// Titik suntik anchor sinkron POST /api/v1/records. Stub `async () => ({ status:
+// 'pending', error: '...' })` mematikan penyiaran nyata tanpa mengubah bentuk
+// respons.
+module.exports.setAnchorkanRecord = (fn) => { anchorkanRecord = fn; };
+// Titik suntik penyapu outbox endpoint cron. `null` mengembalikan ringkasan kosong
+// (tanpa menyentuh database/chain), supaya uji kendali CRON_SECRET tidak menyiarkan.
+module.exports.setSapuAnchor = (fn) => { sapuAnchor = fn; };
 module.exports.autentikasi = autentikasi;
 module.exports.kunciKuota = kunciKuota;
 module.exports.PERINGATAN_LEGACY = PERINGATAN_LEGACY;

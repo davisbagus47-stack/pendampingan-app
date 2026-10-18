@@ -112,6 +112,12 @@ app.gantiAccessLogger(loggerUji);
 // Matikan di sini supaya yang diuji tetap alur submit, bukan autentikasi.
 app.setCariKunci(null);
 
+// Per-input audit jalur form menulis ke PostgreSQL. Uji ini sengaja berjalan
+// TANPA database (Sheets palsu), jadi titik suntiknya dimatikan supaya
+// DATABASE_URL yang kebetulan ada di .env tidak membuat uji menulis record
+// sungguhan.
+app.setCatatFormAudit(null);
+
 async function main() {
   const sheets = sheetsPalsu();
   app.setSheets(() => sheets);
