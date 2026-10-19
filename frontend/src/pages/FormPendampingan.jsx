@@ -244,8 +244,24 @@ const FormPendampingan = () => {
     setLoading(true);
     setStatus(null);
     try {
-      await axios.post(`${API_URL}/api/submit`, formData);
-      setStatus({ type: 'success', message: 'Data berhasil dikirim ke Google Sheets.' });
+      const res = await axios.post(`${API_URL}/api/submit`, formData);
+      const a = (res.data && res.data.anchor) || {};
+      let pesan = 'Data berhasil disimpan ke Google Sheets.';
+      let tipe = 'success';
+      if (a.status === 'submitted' && a.tx_hash) {
+        pesan += ` Blockchain: sudah disiarkan (menunggu konfirmasi). Tx: ${a.tx_hash}`;
+      } else if (a.status === 'anchored' && a.tx_hash) {
+        pesan += ` Blockchain: tercatat (anchored). Tx: ${a.tx_hash}`;
+      } else if (a.status === 'skipped') {
+        tipe = 'warning';
+        pesan += ` Catatan blockchain dilewati: ${a.reason || 'tidak diketahui'}.`;
+      } else if (a.status === 'error' || a.status === 'pending') {
+        tipe = 'warning';
+        pesan += a.error
+          ? ` Blockchain belum tercatat: ${a.error}`
+          : ' Blockchain belum tercatat (akan dicoba lagi oleh sistem).';
+      }
+      setStatus({ type: tipe, message: pesan });
       setFormData(FORM_AWAL);
       setSearchQuery('');
     } catch (error) {
