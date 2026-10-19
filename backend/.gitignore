@@ -8,3 +8,6 @@ print_creds.js
 zkp/bin/
 zkp/ptau/
 zkp/build/
+
+# Berkas SQL sementara yang ditulis lalu dihapus tools/test-generate-schema.js.
+sql/_uji_urutan.sql

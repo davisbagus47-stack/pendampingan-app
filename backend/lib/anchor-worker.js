@@ -17,6 +17,9 @@
  *
  *   pending   Belum pernah berhasil. `next_retry_at = NULL` berarti baru lahir
  *             dan boleh diproses sekarang; bukan NULL berarti menunggu jadwal.
+ *             `pending` DENGAN `tx_hash` terisi = transaksi sudah DISIARKAN
+ *             (mode hybrid) tetapi belum terkonfirmasi; worker memeriksa
+ *             receipt, bukan mengirim ulang.
  *   anchored  Selesai: `tx_hash` + `anchored_at` terisi. Tidak pernah dipilih
  *             lagi. Idempotensi ganda (AT-05): kunci UNIQUE outbox menjamin
  *             satu baris per (record_id, version), pick hanya mengambil
@@ -52,6 +55,10 @@ const BAWAAN = {
   GANDA: 2,
   TUNDA_MAKS: 60 * 60 * 1000,
   BATCH: 50,
+  // Jeda sebelum memeriksa ulang receipt transaksi yang SUDAH disiarkan
+  // (mode hybrid) tetapi belum masuk blok. Bukan kegagalan, jadi tidak
+  // menambah `attempts`.
+  JEDA_KONFIRMASI: 15 * 1000,
   // Panjang `last_error` dibatasi supaya baris database tidak menggembung
   // dengan pesan galat penuh yang biasanya sama berulang.
   LAST_ERROR_MAKS: 500,
@@ -69,6 +76,7 @@ function aturanDari(o) {
     TUNDA_AWAL: angka(k.TUNDA_AWAL, BAWAAN.TUNDA_AWAL),
     GANDA: angka(k.GANDA, BAWAAN.GANDA),
     TUNDA_MAKS: angka(k.TUNDA_MAKS, BAWAAN.TUNDA_MAKS),
+    JEDA_KONFIRMASI: angka(k.JEDA_KONFIRMASI, BAWAAN.JEDA_KONFIRMASI),
     LAST_ERROR_MAKS: Math.floor(angka(k.LAST_ERROR_MAKS, BAWAAN.LAST_ERROR_MAKS)),
   };
 }
@@ -96,12 +104,16 @@ function waktuMs(nilai) {
  * Keputusan murni untuk satu baris outbox setelah satu percobaan anchor.
  *
  * Hasil anchor (`hasil`) adalah kontrak suntikan, bukan bentuk database:
- *   { ok: true, tx_hash }     anchor diterima
- *   { ok: false, error }      anchor ditolak/gagal
- *   { ok: false }             gagal tanpa pesan (dipakai pesan bawaan)
+ *   { ok: true, tx_hash }                    anchor diterima (receipt tergali)
+ *   { ok: true, tx_hash, belum_konfirmasi }  disiarkan, receipt belum ada
+ *   { ok: false, error }                     anchor ditolak/gagal
+ *   { ok: false }                            gagal tanpa pesan (pesan bawaan)
  *
  * Baris yang sudah `anchored` ditolak defensif (seharusnya tidak pernah
- * terpilih). Untuk kegagalan, `attempts` dinaikkan dan:
+ * terpilih). Untuk `belum_konfirmasi`, `tx_hash` DISIMPAN tetapi baris TETAP
+ * `pending` dengan `next_retry_at` pendek (`JEDA_KONFIRMASI`): bukan kegagalan,
+ * jadi `attempts` tidak dinaikkan -- worker/cron akan memeriksa receipt lagi.
+ * Untuk kegagalan, `attempts` dinaikkan dan:
  *   - bila belum mencapai MAKS_CUBA: baris tetap `pending`, `next_retry_at`
  *     = sekarang + tunda(attempts);
  *   - bila sudah: `chain_status` menjadi `failed` terminal, `next_retry_at`
@@ -112,7 +124,7 @@ function waktuMs(nilai) {
  * @param {object} [o] `{ now, aturan }`
  * @returns {object} `{ putusan, kolom }` -- `kolom` berisi nilai versi baru
  *   yang boleh ditulis ke database; `putusan` salah satu dari
- *   `'diabaikan'`, `'anchored'`, `'retry'`, `'failed'`.
+ *   `'diabaikan'`, `'anchored'`, `'menunggu'`, `'retry'`, `'failed'`.
  */
 function putuskan(baris, hasil, o) {
   const b = baris || {};
@@ -123,6 +135,20 @@ function putuskan(baris, hasil, o) {
   const ts = waktuMs(o && o.now);
 
   if (hasil && hasil.ok === true) {
+    if (hasil.belum_konfirmasi && hasil.tx_hash) {
+      // Disiarkan (mode kilat) atau sudah disiarkan & receipt belum ada:
+      // simpan tx_hash, biarkan pending, jadwalkan pemeriksaan ulang.
+      return {
+        putusan: 'menunggu',
+        kolom: {
+          chain_status: 'pending',
+          tx_hash: String(hasil.tx_hash).slice(0, 256),
+          attempts: Number(b.attempts) || 0,
+          next_retry_at: new Date(ts + k.JEDA_KONFIRMASI).toISOString(),
+          last_error: null,
+        },
+      };
+    }
     if (!hasil.tx_hash) {
       // Sukses tanpa tx_hash adalah cacat kontrak: meng-anchor berarti ada
       // bukti transaksi. Menandai anchored tanpa hash membuat ikatan on/off-

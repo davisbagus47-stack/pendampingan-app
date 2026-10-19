@@ -129,7 +129,7 @@ async function klaim(o) {
   const rows = await db.transaksi({ role: 'operator' }, async (client) => {
     const res = await client.query(
       'SELECT id, record_id, version, supersedes_id, commitment, chain_status,' +
-      ' attempts, next_retry_at, last_error, created_at' +
+      ' attempts, next_retry_at, last_error, tx_hash, created_at' +
       ' FROM chain_outbox' +
       ' WHERE chain_status = $1' +
       '   AND (next_retry_at IS NULL OR next_retry_at <= now())' +
@@ -152,6 +152,7 @@ async function klaim(o) {
         attempts: Number(r.attempts) || 0,
         next_retry_at: r.next_retry_at === null ? null : new Date(r.next_retry_at).getTime(),
         last_error: r.last_error,
+        tx_hash: r.tx_hash === null || r.tx_hash === undefined ? null : String(r.tx_hash),
         created_at: r.created_at,
       };
     });
@@ -172,7 +173,7 @@ async function sekali(o) {
   const opt = Object.assign({}, o);
   if (!opt.tandai) opt.tandai = pilihPenanda(process.env);
   const { rows, tandai } = await klaim(opt);
-  const ringkasan = { dibaca: rows.length, anchored: 0, retry: 0, failed: 0, diabaikan: 0, galat: 0, rincian: [] };
+  const ringkasan = { dibaca: rows.length, anchored: 0, menunggu: 0, retry: 0, failed: 0, diabaikan: 0, galat: 0, rincian: [] };
 
   for (const baris of rows) {
     let hasil;
@@ -239,6 +240,7 @@ if (require.main === module) {
       const ringkasan = await sekali({});
       console.log('dibaca   : ' + ringkasan.dibaca);
       console.log('anchored : ' + ringkasan.anchored);
+      console.log('menunggu : ' + ringkasan.menunggu);
       console.log('retry    : ' + ringkasan.retry);
       console.log('failed   : ' + ringkasan.failed);
       console.log('diabaikan: ' + ringkasan.diabaikan);

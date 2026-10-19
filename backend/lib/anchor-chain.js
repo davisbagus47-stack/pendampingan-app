@@ -10,8 +10,9 @@
  *     dirakit dari variabel lingkungan oleh `buatPenandaDariEnv`).
  *
  * Kontrak `tandai` yang dihasilkan:
- *   { ok: true, tx_hash }   anchor diterima (receipt sudah tergali)
- *   { ok: false, error }    anchor ditolak/gagal (pesan sudah diringkas)
+ *   { ok: true, tx_hash }                    anchor diterima (receipt sudah tergali)
+ *   { ok: true, tx_hash, belum_konfirmasi }  transaksi disiarkan, receipt belum ada
+ *   { ok: false, error }                     anchor ditolak/gagal (pesan sudah diringkas)
  *
  * Pemetaan on-chain:
  *   - `commitment` outbox adalah SHA-256 heksadesimal 32 byte (64 digit,
@@ -127,6 +128,10 @@ function buatPenanda(o) {
   // (c) tidak menyisakan jarak nonce saat tx yang pasti revert. Bisa dimatikan
   // untuk runner yang tak menyediakan `staticCall`.
   const praSimulasi = opt.praSimulasi !== false;
+  // Mode KILAT (hybrid): siarkan transaksi lalu balikkan `tx_hash` TANPA
+  // menunggu receipt. Finalisasi (menandai `anchored`) diserahkan ke worker/cron
+  // yang memeriksa receipt lewat jalur `tx_hash` di `tandai` bawah ini.
+  const kilat = opt.kilat === true;
 
   async function kirim(nama, args) {
     const fn = kontrak[nama];
@@ -135,34 +140,64 @@ function buatPenanda(o) {
       await fn.staticCall(...args);
     }
     const tx = await fn(...args);
+    if (kilat) return { hash: tx.hash, belum: true };
     const receipt = await tx.wait();
-    return (receipt && receipt.hash) || tx.hash;
+    return { hash: (receipt && receipt.hash) || tx.hash, belum: false };
+  }
+
+  // Ambil provider dari kontrak (runner bisa berupa Signer BERTA provider, atau
+  // Provider langsung) untuk memeriksa receipt transaksi yang sudah disiarkan.
+  function providerDari() {
+    const runner = kontrak.runner;
+    if (runner && typeof runner.getTransactionReceipt === 'function') return runner;
+    if (runner && runner.provider) return runner.provider;
+    return kontrak.provider || null;
+  }
+
+  async function cekReceipt(hash) {
+    const provider = providerDari();
+    if (!provider) return { ketemu: false };
+    const rc = await provider.getTransactionReceipt(hash);
+    if (!rc) return { ketemu: false };
+    return { ketemu: true, sukses: Number(rc.status) === 1 };
   }
 
   return async function tandai(baris) {
     const b = baris || {};
     try {
+      // Jalur finalisasi hybrid: baris yang SUDAH disiarkan (tx_hash terisi)
+      // tidak dikirim ulang -- cukup periksa receipt-nya.
+      if (b.tx_hash) {
+        const hash = String(b.tx_hash);
+        const ck = await cekReceipt(hash);
+        if (!ck.ketemu) return { ok: true, tx_hash: hash, belum_konfirmasi: true };
+        if (ck.sukses) return { ok: true, tx_hash: hash };
+        return { ok: false, error: 'transaksi on-chain revert: ' + hash };
+      }
+
       const com = normHex32(b.commitment);
       const jenis = await kategori(b);
       const catHash = hashKategori(jenis, opt.krypto);
       const version = Number(b.version);
 
-      let hash;
+      let hasil;
       if (b.supersedes_id && leluhur) {
         const tua = await leluhur(b);
         if (!tua || tua.record_id == null || tua.version == null) {
           throw new Error('leluhur tidak ditemukan untuk supersedes_id=' + b.supersedes_id);
         }
-        hash = await kirim('supersede', [
+        hasil = await kirim('supersede', [
           String(tua.record_id), Number(tua.version),
           String(b.record_id), version, com, catHash,
         ]);
       } else {
-        hash = await kirim('anchor', [String(b.record_id), version, com, catHash]);
+        hasil = await kirim('anchor', [String(b.record_id), version, com, catHash]);
       }
 
-      if (!hash) return { ok: false, error: 'transaksi tanpa hash' };
-      return { ok: true, tx_hash: hash };
+      if (!hasil || !hasil.hash) return { ok: false, error: 'transaksi tanpa hash' };
+      const out = { ok: true, tx_hash: hasil.hash };
+      if (hasil.belum) out.belum_konfirmasi = true;
+      return out;
     } catch (e) {
       return { ok: false, error: pesanGalat(e) };
     }
@@ -223,6 +258,8 @@ function buatPenandaDariEnv(env, deps) {
     kategori: d.kategori,
     leluhur: d.leluhur,
     krypto: d.krypto,
+    praSimulasi: d.praSimulasi,
+    kilat: d.kilat,
   });
 }
 

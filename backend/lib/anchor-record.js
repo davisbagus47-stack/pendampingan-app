@@ -28,10 +28,13 @@
  * ia hanya menambahkan penjadwalan.
  *
  * Kontrak `anchorkan`:
- *   { ok: true,  tx_hash }        transaksi terkirim dan receipt tergali
- *   { ok: false, error, ... }     gagal; `tersedia:false` berarti belum
- *                                 dikonfigurasi (outbox tetap `pending`,
- *                                 worker bisa menyapunya nanti)
+ *   { ok: true,  tx_hash }                    transaksi terkirim & receipt tergali
+ *   { ok: true,  tx_hash, belum_konfirmasi }  disiarkan (mode kilat) atau sudah
+ *                                             disiarkan & receipt belum ada;
+ *                                             finalisasi oleh worker/cron
+ *   { ok: false, error, ... }                 gagal; `tersedia:false` berarti
+ *                                             belum dikonfigurasi (outbox tetap
+ *                                             `pending`, worker bisa menyapu nanti)
  */
 
 const anchorChain = require('./anchor-chain');
@@ -50,6 +53,14 @@ let rantai = Promise.resolve();
  * (jalur uji) tidak pernah di-cache supaya tiap uji memakai kontraknya sendiri.
  */
 let penanda = null;
+
+/**
+ * Penanda mode KILAT (hybrid): menyiarkan tanpa menunggu receipt. Dipisah dari
+ * `penanda` supaya jalur sinkron (harus konfirmasi) dan jalur kilat (balas
+ * cepat, finalisasi oleh worker) tidak saling mengubah perilaku. Keduanya
+ * tetap lewat `berantre` yang sama, jadi nonce tetap aman.
+ */
+let penandaKilat = null;
 
 /** Jalankan `fn` setelah semua pengiriman sebelumnya selesai. */
 function berantre(fn) {
@@ -71,7 +82,7 @@ function penolongLeluhur(b) {
 /**
  * Rakit penanda dari kontrak yang sudah ada (tanpa env).
  *
- * @param {object} d `{ kontrak, krypto }`
+ * @param {object} d `{ kontrak, krypto, kilat }`
  * @returns {function}
  */
 function penandaDariKontrak(d) {
@@ -80,6 +91,8 @@ function penandaDariKontrak(d) {
     krypto: d.krypto,
     kategori: penolongKategori,
     leluhur: penolongLeluhur,
+    kilat: d.kilat,
+    praSimulasi: d.praSimulasi,
   });
 }
 
@@ -102,6 +115,26 @@ function ambilPenanda(env, d) {
   return penanda;
 }
 
+/**
+ * Ambil penanda mode kilat, atau bangun dari env bila belum ada.
+ *
+ * @param {object} env variabel lingkungan
+ * @param {object} d `{ kontrak, provider, krypto }`
+ */
+function ambilPenandaKilat(env, d) {
+  if (d.kontrak) return penandaDariKontrak(Object.assign({}, d, { kilat: true }));
+  if (!penandaKilat) {
+    penandaKilat = anchorChain.buatPenandaDariEnv(env, {
+      provider: d.provider,
+      krypto: d.krypto,
+      kategori: penolongKategori,
+      leluhur: penolongLeluhur,
+      kilat: true,
+    });
+  }
+  return penandaKilat;
+}
+
 /** Apakah prasarana chain cukup lengkap untuk meng-anchor. */
 function tersedia(env) {
   return anchorChain.tersedia(env || process.env);
@@ -111,13 +144,15 @@ function tersedia(env) {
  * Anchor satu record sekarang, berurutan terhadap pengiriman lain.
  *
  * @param {object} baris `{ record_id, version, commitment, jenis_sasaran,
- *   supersedes_id, old_record_id, old_version }`
+ *   supersedes_id, old_record_id, old_version, tx_hash }`
  * @param {object} [deps] `{ env, kontrak, provider, krypto }`
- * @returns {Promise<{ok:boolean, tx_hash?:string, error?:string, tersedia?:boolean}>}
+ * @param {object} [opsi] `{ kilat }` -- kilat: siarkan tanpa menunggu receipt
+ * @returns {Promise<{ok:boolean, tx_hash?:string, belum_konfirmasi?:boolean, error?:string, tersedia?:boolean}>}
  */
-async function anchorkan(baris, deps) {
+async function anchorkan(baris, deps, opsi) {
   const d = deps || {};
   const env = d.env || process.env;
+  const kilat = !!(opsi && opsi.kilat);
   if (!anchorChain.tersedia(env)) {
     return {
       ok: false,
@@ -128,7 +163,7 @@ async function anchorkan(baris, deps) {
   }
   let tanda;
   try {
-    tanda = ambilPenanda(env, d);
+    tanda = kilat ? ambilPenandaKilat(env, d) : ambilPenanda(env, d);
   } catch (e) {
     return { ok: false, tersedia: true, error: e && e.message ? e.message : String(e) };
   }
@@ -138,6 +173,7 @@ async function anchorkan(baris, deps) {
 /** Kosongkan penanda & antrean. Untuk uji; tidak dipanggil alur produksi. */
 function aturUlang() {
   penanda = null;
+  penandaKilat = null;
   rantai = Promise.resolve();
 }
 

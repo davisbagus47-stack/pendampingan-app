@@ -1566,18 +1566,26 @@ function galatTulisDariPg(e) {
 }
 
 /**
- * Anchor SATU record secara sinkron, lalu tandai baris outbox-nya `anchored`
- * (F3.4 lanjutan). Dipakai jalur tulis ber-kunci instansi, yang volumenya
- * terkendali sehingga menunggu transaksi blockchain dapat diterima.
+ * Anchor SATU record, lalu tandai baris outbox-nya (F3.4 lanjutan).
+ *
+ * Dua mode:
+ *   - SINKRON (bawaan): tunggu receipt, tandai `anchored`. Dipakai jalur tulis
+ *     ber-kunci instansi (`POST /api/v1/records`), yang volumenya terkendali.
+ *   - KILAT (`opsi.kilat`): siarkan lalu balas `status: 'submitted'` TANPA
+ *     menunggu receipt. Baris outbox menyimpan `tx_hash` sambil TETAP `pending`;
+ *     worker/cron memeriksa receipt lalu menandainya `anchored`. Dipakai form
+ *     publik (`POST /api/submit`) supaya balasan cepat, tetap per input.
  *
  * Anchor bersifat "advisory": kegagalan chain TIDAK menggagalkan penulisan.
  * Record dan baris outbox sudah commit; yang tersisa hanyalah menandai. Bila
  * gagal, baris tetap `pending` dan worker (`tools/worker-anchor.js`) akan
  * menyapunya nanti.
  *
+ * @param {object} opsi `{ kilat }`
  * @returns {Promise<{status:string, tx_hash?:string, error?:string}>}
  */
-async function anchorkanRecordDb(ringkas, meta) {
+async function anchorkanRecordDb(ringkas, meta, opsi) {
+  const kilat = !!(opsi && opsi.kilat);
   const hasil = await anchorRecord.anchorkan({
     record_id: ringkas.record_id,
     version: ringkas.version,
@@ -1586,15 +1594,27 @@ async function anchorkanRecordDb(ringkas, meta) {
     supersedes_id: ringkas.supersedes_id,
     old_record_id: meta && meta.old_record_id,
     old_version: meta && meta.old_version,
-  });
+  }, undefined, { kilat });
 
   if (!hasil.ok) {
     return { status: 'pending', error: hasil.error || null };
   }
 
   // Penanda outbox dijalankan peran `operator`: policy chain_outbox_operator_only
-  // mengizinkan UPDATE, sementara INSERT-nya tadi dilakukan peran `agency`.
-  // Kegagalan di sini tidak fatal -- anchor on-chain sudah terjadi.
+  // mengizinkan UPDATE, sementara INSERT-nya tadi dilakukan peran `agency`/`operator`.
+  // Kegagalan di sini tidak fatal -- anchor on-chain sudah terjadi/disiarkan.
+  if (kilat && hasil.belum_konfirmasi) {
+    // Disiarkan tapi belum terkonfirmasi: simpan tx_hash, biarkan `pending`.
+    await db.transaksi({ role: 'operator' }, async (client) => {
+      await client.query(
+        'UPDATE chain_outbox SET tx_hash = $1, last_error = NULL' +
+        " WHERE record_id = $2 AND version = $3 AND chain_status = 'pending'",
+        [hasil.tx_hash, ringkas.record_id, ringkas.version]
+      );
+    }).catch(() => {});
+    return { status: 'submitted', tx_hash: hasil.tx_hash };
+  }
+
   await db.transaksi({ role: 'operator' }, async (client) => {
     await client.query(
       "UPDATE chain_outbox SET chain_status = 'anchored', tx_hash = $1," +
@@ -1612,15 +1632,20 @@ anchorkanRecord = anchorkanRecordDb;
 
 /**
  * Catat satu kiriman form publik sebagai `records` + `chain_outbox` (F3.3),
- * lalu ANCHOR sinkron per input (F3.4).
+ * lalu ANCHOR per input mode KILAT (F3.4 hybrid).
  *
  * Form tidak membawa kunci instansi, jadi penulisan berjalan peran `operator`
  * dengan `institution_id` = instansi operator yang di-seed
  * (`tools/seed-operator.js`). Penulisan dan panggilan chain DIPISAH: baris
  * `records` + `chain_outbox` di-COMMIT lebih dulu, baru anchor dijalankan --
  * panggilan RPC tidak boleh terjadi di dalam transaksi database yang terbuka
- * (bisa lambat). Kalau anchor gagal, baris tetap `pending` dan worker/cron
- * menyapunya nanti (idempoten: outbox di-update dengan penjaga `chain_status`).
+ * (bisa lambat).
+ *
+ * Mode KILAT: transaksi disiarkan (dapat `tx_hash`) lalu dibalas `submitted`
+ * TANPA menunggu receipt ~12 detik. Baris outbox menyimpan `tx_hash` sambil
+ * TETAP `pending`; worker/cron memeriksa receipt lalu menandainya `anchored`
+ * (idempoten: outbox di-update dengan penjaga `chain_status`). Bila siaran
+ * gagal, baris tetap `pending` tanpa `tx_hash` dan worker menyapunya nanti.
  *
  * Selalu mengembalikan objek ringkas (tidak pernah melempar untuk kondisi
  * wajar): DB tidak ada, instansi belum di-seed, atau jenis di luar taksonomi
@@ -1690,11 +1715,13 @@ async function catatRecordForm(body) {
     return { status: 'skipped', reason: hasilTulis.reason, institution_key: hasilTulis.institution_key, jenis: hasilTulis.jenis };
   }
 
-  // Anchor sinkron per input, di LUAR transaksi tulis yang sudah commit.
+  // Anchor per input mode KILAT, di LUAR transaksi tulis yang sudah commit:
+  // transaksi disiarkan lalu dibalas cepat (`submitted`), finalisasi (`anchored`)
+  // oleh worker/cron yang memeriksa receipt.
   let anchor;
   try {
     anchor = typeof anchorkanRecord === 'function'
-      ? await anchorkanRecord(hasilTulis, { jenis_sasaran: hasilTulis.jenis_sasaran })
+      ? await anchorkanRecord(hasilTulis, { jenis_sasaran: hasilTulis.jenis_sasaran }, { kilat: true })
       : { status: 'pending', error: 'ANCHOR_DISABLED' };
   } catch (e) {
     anchor = { status: 'pending', error: e && e.message ? e.message : String(e) };
@@ -1976,10 +2003,10 @@ app.post('/api/submit', async (req, res) => {
     });
 
     // Per-input audit: setelah baris Sheets sukses, catat juga `records` +
-    // `chain_outbox` (peran operator) DAN anchor sinkron per input. `catatRecordForm`
-    // yang mengerjakan keduanya. Bila anchor gagal (RPC/galat), baris tetap
-    // `pending` dan worker/cron menyapunya nanti -- submit tetap sukses karena
-    // Sheets adalah tujuan utama form.
+    // `chain_outbox` (peran operator) DAN anchor per input mode kilat. Respons
+    // memuat `status: 'submitted'` + tx_hash; finalisasi `anchored` oleh
+    // worker/cron. Bila siaran gagal, baris tetap `pending` dan worker/cron
+    // menyapunya nanti -- submit tetap sukses karena Sheets tujuan utama form.
     let auditForm;
     try {
       auditForm = typeof catatFormAudit === 'function'

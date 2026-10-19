@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Uji live PER-INPUT AUDIT end-to-end: POST /api/v1/records dan
- * POST /api/submit -- keduanya anchor SINKRON per input.
+ * Uji live PER-INPUT AUDIT end-to-end: POST /api/v1/records (anchor SINKRON)
+ * dan POST /api/submit form publik (anchor KILAT / hybrid).
  *
  * Berbeda dari `test-records-write-live.js` yang menukar anchor dengan spy,
  * di sini anchor SUNGGUHAN dijalankan -- tetapi terhadap anvil lokal, bukan
@@ -10,18 +10,21 @@
  *
  *   A. POST /api/v1/records
  *        -> record + outbox commit, lalu `anchorkanRecordDb` meng-anchor ke
- *           kontrak dan menandai outbox `anchored`; respons memuat tx_hash.
+ *           kontrak (tunggu receipt) dan menandai outbox `anchored`; respons
+ *           memuat tx_hash.
  *   B. POST /api/submit (form publik)
  *        -> record + outbox commit (peran operator, instansi operator), lalu
- *           anchor SINKRON per input ke kontrak; respons memuat tx_hash dan
- *           outbox `anchored`.
+ *           anchor KILAT: transaksi disiarkan dan respons memuat tx_hash dengan
+ *           status `submitted`; outbox TETAP `pending` + tx_hash. Dilanjutkan
+ *           jalur reconcile (periksa receipt) yang dipakai worker -> outbox
+ *           `anchored`.
  *
  * Prasyarat: DATABASE_URL (untuk record/outbox) + artefak Foundry + biner
  * anvil. Bila salah satu tidak ada, uji DILEWATI dengan exit 0.
  *
- * Penyapuan/penandaan outbox oleh worker TIDAK diuji di sini (itu
- * test-anchor-worker-live.js / test-anchor-chain-worker-live.js). Yang diuji
- * adalah bahwa kedua route MENGHASILKAN baris yang siap disapu.
+ * Penyapuan outbox oleh worker CLI diuji di test-anchor-worker-live.js /
+ * test-anchor-chain-worker-live.js; di sini transisi statusnya diuji lewat
+ * mesin murni `anchor-worker.putuskan`.
  */
 
 const fs = require('fs');
@@ -229,7 +232,7 @@ async function main() {
       await terpasang.isAnchored(ka.body.record_id, 1), true);
 
     // =======================================================================
-    console.log('\n=== B. POST /api/submit: records+outbox + anchor SINKRON per input ===');
+    console.log('\n=== B. POST /api/submit: records+outbox + anchor KILAT (hybrid) ===');
     // =======================================================================
 
     // Sheets palsu: form menulis ke sini, bukan ke Google.
@@ -246,7 +249,7 @@ async function main() {
     const nikForm = '3273' + String(Date.now()).slice(-12);
     const kf = await kirim('/api/submit', { tanpaKunci: true }, tubuh({ nik: nikForm, nama_lengkap: 'Uji Form PIA' }));
     eq('submit: 200', kf.status, 200);
-    eq('respons: status anchor = anchored', kf.body && kf.body.anchor && kf.body.anchor.status, 'anchored');
+    eq('respons: status anchor = submitted', kf.body && kf.body.anchor && kf.body.anchor.status, 'submitted');
     ok('respons: ada record_id', !!(kf.body && kf.body.anchor && kf.body.anchor.record_id));
     ok('respons: tx_hash ada', /^0x[0-9a-f]{64}$/i.test((kf.body && kf.body.anchor && kf.body.anchor.tx_hash) || ''));
     app.setSheets(null);
@@ -259,15 +262,46 @@ async function main() {
     eq('records: commitment = SHA256(record_hash||operator)',
       kf.body.anchor.commitment, c.commitment(recF.record_hash, kunciOperator));
 
+    // Disiarkan tetapi TETAP pending: tx_hash tersimpan, menunggu receipt.
     const obF = (await utama.query(
       'SELECT chain_status, tx_hash, commitment FROM chain_outbox WHERE record_id = $1 AND version = 1',
       [kf.body.anchor.record_id]
     )).rows[0];
-    eq('outbox: chain_status anchored', obF && obF.chain_status, 'anchored');
+    eq('outbox: chain_status pending (hybrid)', obF && obF.chain_status, 'pending');
     eq('outbox: tx_hash = respons', obF && obF.tx_hash, kf.body.anchor.tx_hash);
     eq('outbox: commitment = respons', obF && obF.commitment, kf.body.anchor.commitment);
     ok('on-chain: isAnchored(record_id form,1) = true',
       await terpasang.isAnchored(kf.body.anchor.record_id, 1), true);
+
+    // Finalisasi: jalur reconcile yang dipakai worker TIDAK mengirim ulang --
+    // cukup memeriksa receipt (mengirim ulang akan revert FR-5.3).
+    const rekon = await anchorRecord.anchorkan({
+      record_id: kf.body.anchor.record_id,
+      version: 1,
+      commitment: obF.commitment,
+      jenis_sasaran: 'Catin',
+      tx_hash: kf.body.anchor.tx_hash,
+    }, { kontrak: terpasang });
+    eq('reconcile: ok (receipt ditemukan, tanpa kirim ulang)', rekon.ok, true);
+    eq('reconcile: tx_hash sama', rekon.tx_hash, kf.body.anchor.tx_hash);
+    ok('reconcile: bukan belum_konfirmasi', !rekon.belum_konfirmasi);
+
+    // Transisi status worker (mesin murni) lalu terapkan ke outbox.
+    const aw = require(path.join(__dirname, '..', 'lib', 'anchor-worker.js'));
+    const put = aw.putuskan(
+      { chain_status: 'pending', attempts: 0, tx_hash: obF.tx_hash }, rekon, {}
+    );
+    eq('worker: putusan anchored', put.putusan, 'anchored');
+    await utama.query(
+      "UPDATE chain_outbox SET chain_status = $1, tx_hash = $2, anchored_at = now()" +
+      ' WHERE record_id = $3 AND version = 1',
+      [put.kolom.chain_status, put.kolom.tx_hash, kf.body.anchor.record_id]
+    );
+    const obF2 = (await utama.query(
+      'SELECT chain_status FROM chain_outbox WHERE record_id = $1 AND version = 1',
+      [kf.body.anchor.record_id]
+    )).rows[0];
+    eq('outbox setelah finalisasi: anchored', obF2 && obF2.chain_status, 'anchored');
 
     server.close();
   } finally {

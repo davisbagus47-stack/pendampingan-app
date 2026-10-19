@@ -78,7 +78,36 @@ console.log('\n=== 3. putuskan: sukses ===');
   ).kolom.tx_hash.length === 256);
 }
 
-console.log('\n=== 4. putuskan: sukses tanpa tx_hash = cacat, jadi retry ===');
+console.log('\n=== 4. putuskan: belum_konfirmasi -> menunggu (hybrid) ===');
+{
+  const NOW = 1_700_000_000_000;
+  const r = aw.putuskan(
+    { chain_status: 'pending', attempts: 2, tx_hash: null },
+    { ok: true, tx_hash: '0xdead', belum_konfirmasi: true },
+    { now: NOW }
+  );
+  eq('putusan menunggu', r.putusan, 'menunggu');
+  eq('tetap pending', r.kolom.chain_status, 'pending');
+  eq('tx_hash disimpan', r.kolom.tx_hash, '0xdead');
+  eq('attempts tidak naik', r.kolom.attempts, 2);
+  eq('next_retry_at = now + JEDA_KONFIRMASI', r.kolom.next_retry_at,
+    new Date(NOW + aw.BAWAAN.JEDA_KONFIRMASI).toISOString());
+  eq('last_error bersih', r.kolom.last_error, null);
+  ok('aturan kustom JEDA_KONFIRMASI', aw.putuskan(
+    { chain_status: 'pending', attempts: 0 },
+    { ok: true, tx_hash: '0x1', belum_konfirmasi: true },
+    { now: NOW, aturan: { JEDA_KONFIRMASI: 5000 } }
+  ).kolom.next_retry_at === new Date(NOW + 5000).toISOString());
+
+  const rc = aw.putuskan(
+    { chain_status: 'pending', attempts: 0, tx_hash: '0xdead' },
+    { ok: true, tx_hash: '0xdead' },
+    { now: NOW }
+  );
+  eq('reconcile terkonfirmasi -> anchored', rc.putusan, 'anchored');
+}
+
+console.log('\n=== 5. putuskan: sukses tanpa tx_hash = cacat, jadi retry ===');
 {
   const NOW = 1_700_000_000_000;
   const r = aw.putuskan({ chain_status: 'pending', attempts: 2 }, { ok: true }, { now: NOW });
@@ -89,7 +118,7 @@ console.log('\n=== 4. putuskan: sukses tanpa tx_hash = cacat, jadi retry ===');
   ok('next_retry_at terisi', typeof r.kolom.next_retry_at === 'string');
 }
 
-console.log('\n=== 5. putuskan: gagal -> retry sampai MAKS_CUBA ===');
+console.log('\n=== 6. putuskan: gagal -> retry sampai MAKS_CUBA ===');
 {
   const NOW = 1_700_000_000_000;
   const MAKS = 3;
@@ -121,7 +150,7 @@ console.log('\n=== 5. putuskan: gagal -> retry sampai MAKS_CUBA ===');
   eq('kolom null untuk diabaikan', terakhir.kolom, null);
 }
 
-console.log('\n=== 6. putuskan: kegagalan tanpa pesan ===');
+console.log('\n=== 7. putuskan: kegagalan tanpa pesan ===');
 {
   const r = aw.putuskan(
     { chain_status: 'pending', attempts: 0 },
@@ -132,7 +161,7 @@ console.log('\n=== 6. putuskan: kegagalan tanpa pesan ===');
   eq('pesan bawaan', r.kolom.last_error, 'anchor gagal');
 }
 
-console.log('\n=== 7. last_error dipotong ===');
+console.log('\n=== 8. last_error dipotong ===');
 {
   const panjang = 1200;
   const r = aw.putuskan(
@@ -143,7 +172,7 @@ console.log('\n=== 7. last_error dipotong ===');
   ok('dipotong ke LAST_ERROR_MAKS', r.kolom.last_error.length === 500);
 }
 
-console.log('\n=== 8. aturanDari: nilai rusak memakai bawaan ===');
+console.log('\n=== 9. aturanDari: nilai rusak memakai bawaan ===');
 {
   const a = aw.aturanDari(null);
   eq('bawaan MAKS_CUBA', a.MAKS_CUBA, aw.BAWAAN.MAKS_CUBA);
