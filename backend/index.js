@@ -1370,7 +1370,6 @@ app.get('/api/sasaran', async (req, res) => {
       sasaranList = Object.values(sasaranMap);
     }
 
-
     // FR-4.20b: baris data hanya boleh dikirim lewat kirimBaris. Sebelumnya
     // res.json di sini berarti kolom terlarang tidak pernah disaring -- dan
     // kolom itu bisa saja muncul kalau FIELDS_SASARAN suatu saat diperluas.
@@ -2158,5 +2157,4 @@ module.exports.gantiAccessLogger = (loggerBaru) => {
 };
 module.exports.accessLog = accessLog;
 module.exports.db = db;
-/ /   f o r c e   r e d e p l o y   1 2 : 5 3 : 3 2  
- 
+
