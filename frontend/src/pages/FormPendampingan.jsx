@@ -145,6 +145,7 @@ const FormPendampingan = () => {
   const [formData, setFormData] = useState(FORM_AWAL);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
+  const [successModal, setSuccessModal] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sasaranList, setSasaranList] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
@@ -246,22 +247,30 @@ const FormPendampingan = () => {
     try {
       const res = await axios.post(`${API_URL}/api/submit`, formData);
       const a = (res.data && res.data.anchor) || {};
-      let pesan = 'Data berhasil disimpan ke Google Sheets.';
-      let tipe = 'success';
       if (a.status === 'submitted' && a.tx_hash) {
-        pesan += ` Blockchain: sudah disiarkan (menunggu konfirmasi). Tx: ${a.tx_hash}`;
+        setSuccessModal({
+          title: 'Data Berhasil Dikirim',
+          message: `Data berhasil disimpan ke Google Sheets.\nBlockchain: sudah disiarkan (menunggu konfirmasi).\nTx: ${a.tx_hash}`,
+        });
       } else if (a.status === 'anchored' && a.tx_hash) {
-        pesan += ` Blockchain: tercatat (anchored). Tx: ${a.tx_hash}`;
-      } else if (a.status === 'skipped') {
-        tipe = 'warning';
-        pesan += ` Catatan blockchain dilewati: ${a.reason || 'tidak diketahui'}.`;
-      } else if (a.status === 'error' || a.status === 'pending') {
-        tipe = 'warning';
-        pesan += a.error
-          ? ` Blockchain belum tercatat: ${a.error}`
-          : ' Blockchain belum tercatat (akan dicoba lagi oleh sistem).';
+        setSuccessModal({
+          title: 'Data Berhasil Dikirim',
+          message: `Data berhasil disimpan ke Google Sheets.\nBlockchain: tercatat (anchored).\nTx: ${a.tx_hash}`,
+        });
+      } else {
+        let pesan = 'Data berhasil disimpan ke Google Sheets.';
+        let tipe = 'success';
+        if (a.status === 'skipped') {
+          tipe = 'warning';
+          pesan += ` Catatan blockchain dilewati: ${a.reason || 'tidak diketahui'}.`;
+        } else if (a.status === 'error' || a.status === 'pending') {
+          tipe = 'warning';
+          pesan += a.error
+            ? ` Blockchain belum tercatat: ${a.error}`
+            : ' Blockchain belum tercatat (akan dicoba lagi oleh sistem).';
+        }
+        setStatus({ type: tipe, message: pesan });
       }
-      setStatus({ type: tipe, message: pesan });
       setFormData(FORM_AWAL);
       setSearchQuery('');
     } catch (error) {
@@ -934,6 +943,25 @@ const FormPendampingan = () => {
             </button>
           </div>
         </form>
+
+        {/* Modal sukses */}
+        {successModal && (
+          <div className="modal-overlay" onClick={() => setSuccessModal(null)}>
+            <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>{successModal.title}</h3>
+              </div>
+              <div className="modal-body">
+                <pre>{successModal.message}</pre>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-primary" onClick={() => setSuccessModal(null)}>
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <footer className="gov-footer">
           Aplikasi Pendataan Pendampingan Keluarga — Tim Pendamping Keluarga (TPK) &middot; Berdasarkan SE BKKBN No. 12 Tahun 2024
