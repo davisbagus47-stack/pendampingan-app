@@ -585,6 +585,26 @@ function emit(catalog) {
     q('pending') + ', ' + q('failed') + ');');
   w();
 
+  w('-- ============================================================================');
+  w('-- SHEETS_PENDING - async flush ke Google Sheets (hybrid bercabang)');
+  w('-- Record disimpan dulu di DB, return cepat ke user; cron flush ke Sheets.');
+  w('-- ============================================================================');
+  w('CREATE TABLE sheets_pending (');
+  w('  id            BIGSERIAL PRIMARY KEY,');
+  w('  payload_json  JSONB   NOT NULL,');
+  w('  row_data      JSONB   NOT NULL,  -- array baris untuk Sheets append');
+  w('  status        TEXT    NOT NULL DEFAULT ' + q('pending') + ' CHECK (status IN (' +
+    [q('pending'), q('done'), q('failed')].join(', ') + ')),');
+  w('  attempts      INTEGER NOT NULL DEFAULT 0,');
+  w('  next_retry_at TIMESTAMPTZ,');
+  w('  last_error    TEXT,');
+  w('  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),');
+  w('  done_at       TIMESTAMPTZ');
+  w(');');
+  w('CREATE INDEX idx_sheets_pending_pending ON sheets_pending (next_retry_at) WHERE status IN (' +
+    q('pending') + ', ' + q('failed') + ');');
+  w();
+
   w();
 
   // --- RLS

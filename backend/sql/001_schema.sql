@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- Skema PostgreSQL - Data Center Sasaran Pendampingan
 --
 -- BERKAS INI DIHASILKAN. Jangan diedit manual.
@@ -447,6 +447,23 @@ CREATE TABLE chain_outbox (
 );
 CREATE INDEX idx_outbox_pending ON chain_outbox (next_retry_at) WHERE chain_status IN ('pending', 'failed');
 
+-- ============================================================================
+-- SHEETS_PENDING - async flush ke Google Sheets (hybrid bercabang)
+-- Record disimpan dulu di DB, return cepat ke user; cron flush ke Sheets.
+-- ============================================================================
+CREATE TABLE sheets_pending (
+  id            BIGSERIAL PRIMARY KEY,
+  payload_json  JSONB   NOT NULL,
+  row_data      JSONB   NOT NULL,  -- array baris untuk Sheets append
+  status        TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'failed')),
+  attempts      INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  last_error    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  done_at       TIMESTAMPTZ
+);
+CREATE INDEX idx_sheets_pending_pending ON sheets_pending (next_retry_at) WHERE status IN ('pending', 'failed');
+
 
 -- ============================================================================
 -- ROW LEVEL SECURITY
@@ -630,20 +647,6 @@ CREATE POLICY agency_config_own_write ON agency_config
   FOR ALL
   USING (agency_id = jwt_agency_id() OR jwt_role() IN ('operator', 'admin'))
   WITH CHECK (agency_id = jwt_agency_id() OR jwt_role() IN ('operator', 'admin'));
--- @@FUNGSI_END
-
---
--- Migrasi taksonomi: tambah kategori 'Balita' ke CHECK constraints (ADR-5).
--- Dijalankan idempoten oleh  erapkan pada DB yang sudah ada.
--- @@FUNGSI_START
-ALTER TABLE agency_categories
-  DROP CONSTRAINT IF EXISTS agency_categories_jenis_sasaran_check,
-  ADD CONSTRAINT agency_categories_jenis_sasaran_check
-    CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'));
-ALTER TABLE records
-  DROP CONSTRAINT IF EXISTS records_jenis_sasaran_check,
-  ADD CONSTRAINT records_jenis_sasaran_check
-    CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'));
 -- @@FUNGSI_END
 
 -- Kuota hanya boleh diubah Admin/operator, tidak oleh instansi sendiri.
@@ -856,11 +859,91 @@ COMMENT ON FUNCTION cari_kunci(TEXT) IS
 GRANT EXECUTE ON FUNCTION cari_kunci(TEXT) TO PUBLIC;
 -- @@FUNGSI_END
 
+-- ============================================================================
+-- SHEETS_PENDING - table + RLS (async flush ke Google Sheets)
+-- Dijalankan idempoten oleh `terapkan` pada DB yang sudah ada.
+-- @@FUNGSI_START
+CREATE TABLE IF NOT EXISTS sheets_pending (
+  id            BIGSERIAL PRIMARY KEY,
+  payload_json  JSONB   NOT NULL,
+  row_data      JSONB   NOT NULL,
+  status        TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'failed')),
+  attempts      INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  last_error    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  done_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_sheets_pending_pending ON sheets_pending (next_retry_at) WHERE status IN ('pending', 'failed');
+
+ALTER TABLE sheets_pending ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sheets_pending FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sheets_pending_operator_all ON sheets_pending;
+CREATE POLICY sheets_pending_operator_all ON sheets_pending
+  FOR ALL
+  USING (jwt_role() IN ('operator', 'admin'))
+  WITH CHECK (jwt_role() IN ('operator', 'admin'));
+
+DROP POLICY IF EXISTS sheets_pending_agency_insert ON sheets_pending;
+CREATE POLICY sheets_pending_agency_insert ON sheets_pending
+  FOR INSERT
+  WITH CHECK (
+    jwt_role() = 'agency'
+    AND EXISTS (
+      SELECT 1 FROM agencies a
+      WHERE a.id = jwt_agency_id() AND a.status = 'active'
+    )
+  );
+
+DROP POLICY IF EXISTS sheets_pending_agency_select ON sheets_pending;
+CREATE POLICY sheets_pending_agency_select ON sheets_pending
+  FOR SELECT
+  USING (
+    jwt_role() = 'agency'
+    AND EXISTS (
+      SELECT 1 FROM agencies a
+      WHERE a.id = jwt_agency_id() AND a.status = 'active'
+    )
+  );
+-- @@FUNGSI_END
+
+-- ============================================================================
+-- SHEETS_PENDING - RLS policies (async flush ke Google Sheets)
+-- Dijalankan idempoten oleh `terapkan` pada DB yang sudah ada.
+-- @@FUNGSI_START
+ALTER TABLE sheets_pending ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sheets_pending FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sheets_pending_operator_all ON sheets_pending;
+CREATE POLICY sheets_pending_operator_all ON sheets_pending
+  FOR ALL
+  USING (jwt_role() IN ('operator', 'admin'))
+  WITH CHECK (jwt_role() IN ('operator', 'admin'));
+
+-- Agency bisa insert (menyimpan pending write) dan read (melihat status sendiri).
+-- Perlu kategori yang di-grant ke instansi ini.
+DROP POLICY IF EXISTS sheets_pending_agency_insert ON sheets_pending;
+CREATE POLICY sheets_pending_agency_insert ON sheets_pending
+  FOR INSERT
+  WITH CHECK (
+    jwt_role() = 'agency'
+    AND EXISTS (
+      SELECT 1 FROM agencies a
+      WHERE a.id = jwt_agency_id() AND a.status = 'active'
+    )
+  );
+
+DROP POLICY IF EXISTS sheets_pending_agency_select ON sheets_pending;
+CREATE POLICY sheets_pending_agency_select ON sheets_pending
+  FOR SELECT
+  USING (
+    jwt_role() = 'agency'
+    AND EXISTS (
+      SELECT 1 FROM agencies a
+      WHERE a.id = jwt_agency_id() AND a.status = 'active'
+    )
+  );
+-- @@FUNGSI_END
+
 COMMIT;
-
-
-
-
-
-
-

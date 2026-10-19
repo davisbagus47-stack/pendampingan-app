@@ -816,6 +816,14 @@ const nextNumber = async (sheets) => {
   return count + 1;
 };
 
+// Placeholder nomor urut untuk async flush (tanpa panggil Sheets API).
+// Pakai timestamp + counter lokal agar unik per request.
+let _sheetSeq = 0;
+const nextNumberPlaceholder = async () => {
+  _sheetSeq = (_sheetSeq + 1) % 1000000;
+  return Date.now() + _sheetSeq;
+};
+
 const validate = (body) => {
   const errors = [];
   if (!tombol(body.namaTPK)) errors.push('namaTPK');
@@ -1987,27 +1995,33 @@ app.post('/api/submit', async (req, res) => {
       params: paramsAkses(req, 'json', null),
     });
 
-    if (errors.length > 0) {
+if (errors.length > 0) {
       accessLog.tandai(res, { result: accessLog.HASIL.ERROR, params: Object.assign({}, res.locals.accessLog.params, { fields_invalid: errors.length }) });
       return res.status(400).json({ success: false, message: `Data tidak lengkap atau tidak valid: ${errors.join(', ')}`, errors });
     }
 
-    const sheets = await getSheets();
-    await ensureHeaders(sheets);
-    const no = await nextNumber(sheets);
+    // Build row data for Sheets (async flush)
+    const no = await nextNumberPlaceholder();
+    const rowData = [no, ...buildRow(body)];
 
-    const result = await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID(),
-      range: `${SHEET_NAME()}!A1`,
-      valueInputOption: 'RAW',
-      resource: { values: [[no, ...buildRow(body)]] },
-    });
+    // Simpan ke sheets_pending (async flush ke Sheets via cron)
+    if (db.urlDatabase()) {
+      try {
+        await db.transaksi({ role: 'operator' }, async (client) => {
+          await client.query(
+            `INSERT INTO sheets_pending (payload_json, row_data) VALUES ($1, $2)`,
+            [JSON.stringify(body), JSON.stringify(rowData)]
+          );
+        });
+      } catch (e) {
+        console.error(`[${new Date().toISOString()}] Gagal simpan sheets_pending:`, e.message);
+      }
+    }
 
-    // Per-input audit: setelah baris Sheets sukses, catat juga `records` +
-    // `chain_outbox` (peran operator) DAN anchor per input mode kilat. Respons
-    // memuat `status: 'submitted'` + tx_hash; finalisasi `anchored` oleh
+    // Per-input audit: catat `records` + `chain_outbox` + anchor hybrid (kilat).
+    // Respons memuat `status: 'submitted'` + tx_hash; finalisasi `anchored` oleh
     // worker/cron. Bila siaran gagal, baris tetap `pending` dan worker/cron
-    // menyapunya nanti -- submit tetap sukses karena Sheets tujuan utama form.
+    // menyapunya nanti.
     let auditForm;
     try {
       auditForm = typeof catatFormAudit === 'function'
@@ -2022,7 +2036,6 @@ app.post('/api/submit', async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Data berhasil disimpan ke Google Sheets',
-      row: result.data.updates ? result.data.updates.updatedRange : undefined,
       anchor: auditForm,
     });
   } catch (error) {
@@ -2070,11 +2083,46 @@ app.get('/api/cron/anchor', async (req, res) => {
       ? await sapuAnchor(batas)
       : { dibaca: 0, anchored: 0, retry: 0, failed: 0, diabaikan: 0, galat: 0, rincian: [] };
     accessLog.tandai(res, { actorType: 'operator', result: accessLog.HASIL.SUKSES });
-    res.status(200).json({ success: true, batas, ringkasan });
+res.status(200).json({ success: true, batas, ringkasan });
   } catch (error) {
     accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'CRON_ANCHOR_ERROR' });
     console.error(`[${new Date().toISOString()}] cron anchor gagal:`, error.message);
     res.status(500).json({ success: false, message: `Penyapuan anchor gagal: ${error.message}` });
+  }
+});
+
+// ============================================================================
+// Cron flush async ke Google Sheets (GET /api/cron/sheets-flush)
+// Dipanggil berkala oleh Vercel Cron (lihat vercel.json). Butuh CRON_SECRET.
+// ============================================================================
+app.get('/api/cron/sheets-flush', async (req, res) => {
+  const rahasia = String(process.env.CRON_SECRET || '').trim();
+  if (!rahasia) {
+    accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'CRON_SECRET_UNSET' });
+    return res.status(503).json({
+      success: false,
+      message: 'CRON_SECRET belum diset; endpoint cron dimatikan demi keamanan.',
+    });
+  }
+  if (String(req.get('authorization') || '') !== 'Bearer ' + rahasia) {
+    accessLog.tandai(res, { result: accessLog.HASIL.DENIED_AUTH, kode: 'CRON_UNAUTHORIZED' });
+    return res.status(401).json({ success: false, message: 'Tidak berwenang.' });
+  }
+  if (!db.urlDatabase()) {
+    accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'DB_UNAVAILABLE' });
+    return res.status(503).json({ success: false, message: 'DATABASE_URL belum diset.' });
+  }
+
+  try {
+    const worker = require('./tools/worker-sheets.js');
+    const batch = Math.max(1, Math.min(100, Number(process.env.SHEETS_FLUSH_BATCH) || 50));
+    const ringkasan = await worker.flushOnce({ batch });
+    accessLog.tandai(res, { actorType: 'operator', result: accessLog.HASIL.SUKSES });
+    res.status(200).json({ success: true, batch, ringkasan });
+  } catch (error) {
+    accessLog.tandai(res, { result: accessLog.HASIL.ERROR, kode: 'CRON_SHEETS_ERROR' });
+    console.error(`[${new Date().toISOString()}] cron sheets-flush gagal:`, error.message);
+    res.status(500).json({ success: false, message: `Penyapuan Sheets gagal: ${error.message}` });
   }
 });
 
