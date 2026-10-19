@@ -55,6 +55,15 @@ async function main() {
       ' ON CONFLICT (institution_key) DO NOTHING',
       [KUNCI, NAMA]
     );
+    // Tambah grant kategori untuk instansi operator (idempoten).
+    for (const kat of ['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita']) {
+      await client.query(
+        'INSERT INTO agency_categories (agency_id, jenis_sasaran)' +
+        ' SELECT id, $2 FROM agencies WHERE institution_key = $1' +
+        ' ON CONFLICT (agency_id, jenis_sasaran) DO NOTHING',
+        [KUNCI, kat]
+      );
+    }
     const res = await client.query(
       'SELECT id, institution_key, name, status FROM agencies WHERE institution_key = $1',
       [KUNCI]

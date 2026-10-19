@@ -50,7 +50,7 @@ let sapuAnchor = null;
 // Taksonomi ADR-5. Record yang jenisnya di luar ini tidak boleh masuk jalur
 // audit form; lebih baik dilewati dengan alasan jelas daripada menabrak CHECK
 // database yang pesannya jauh dari route ini.
-const TAKSONOMI_SASARAN = new Set(['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta']);
+const TAKSONOMI_SASARAN = new Set(['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita']);
 
 // FR-4.4: setiap pemanggilan, berhasil maupun gagal, masuk satu log akses.
 // Dipasang sebelum semua route, karena yang dipasang adalah responsnya --
@@ -700,6 +700,8 @@ const NORMALIZE_SASARAN = {
   'baduta': 'Baduta',
   'baduta 0-23 bulan': 'Baduta',
   'bayi 0-23 bulan': 'Baduta',
+  'balita': 'Balita',
+  'balita 24-59 bulan': 'Balita',
 };
 
 const normalizeNik = (v) => {

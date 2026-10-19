@@ -43,9 +43,8 @@ if (DENIED_BAWAAN.length === 0) {
 
 /** Batasan nilai yang bisa dinyatakan sebagai CHECK. */
 const ENUMS = {
-  // ADR-5: empat kategori. Perhatikan form masih menawarkan "Balita"
-  // (frontend baris ~12) yang TIDAK ada di taksonomi; lihat catatan di bawah.
-  jenisSasaran: ['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta'],
+  // ADR-5: lima kategori (Catin, Ibu Hamil, Ibu Nifas, Baduta, Balita).
+  jenisSasaran: ['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'],
   jenisKelamin: ['Laki-laki', 'Perempuan'],
 };
 
@@ -271,10 +270,8 @@ function emit(catalog) {
   w('  revoked_at  TIMESTAMPTZ');
   w(');');
   w();
-  w('-- FR-4.2: kategori yang diizinkan. CHECK sengaja memuat keempat kategori ADR-5.');
-  w('-- PoC F0.6: Bidang KB diberi segmen "PUS" = keempat kategori.');
-  w('-- CATATAN: form masih offers "Balita" yang di luar taksonomi. Submit Balita');
-  w('-- akan ditolak CHECK; API harus mengembalikan pesan yang jelas (FR-4.6).');
+  w('-- FR-4.2: kategori yang diizinkan. CHECK memuat lima kategori ADR-5.');
+  w('-- PoC F0.6: Bidang KB diberi segmen "PUS" = lima kategori.');
   w('CREATE TABLE agency_categories (');
   w('  agency_id     BIGINT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,');
   w('  jenis_sasaran TEXT   NOT NULL CHECK (jenis_sasaran IN (' + ENUMS.jenisSasaran.map(q).join(', ') + ')),');
@@ -469,6 +466,7 @@ function emit(catalog) {
   w('  -- taksonomi (ADR-5, FR-2.4). jenis_sasaran sengaja TIDAK dideklarasikan di');
   w('  -- sini karena jenis_sasaran juga ada di FIELD_ORDER; batasan nilainya');
   w('  -- dituliskan pada kolom proyeksinya agar tidak terdefinisi dua kali.');
+  w('  -- Kategori (ADR-5): Catin, Ibu Hamil, Ibu Nifas, Baduta, Balita.');
   w('  -- Satu record dapat mengisi beberapa section:');
   w('  -- ' + columnsSpanningSections(rows).join(', ') + ' muncul di >1 section.');
   w('  -- Karena itu section disimpan sebagai larik, bukan satu nilai.');

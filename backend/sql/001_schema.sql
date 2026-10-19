@@ -1,4 +1,4 @@
--- ============================================================================
+﻿-- ============================================================================
 -- Skema PostgreSQL - Data Center Sasaran Pendampingan
 --
 -- BERKAS INI DIHASILKAN. Jangan diedit manual.
@@ -57,13 +57,11 @@ CREATE TABLE agencies (
   revoked_at  TIMESTAMPTZ
 );
 
--- FR-4.2: kategori yang diizinkan. CHECK sengaja memuat keempat kategori ADR-5.
--- PoC F0.6: Bidang KB diberi segmen "PUS" = keempat kategori.
--- CATATAN: form masih offers "Balita" yang di luar taksonomi. Submit Balita
--- akan ditolak CHECK; API harus mengembalikan pesan yang jelas (FR-4.6).
+-- FR-4.2: kategori yang diizinkan. CHECK memuat lima kategori ADR-5.
+-- PoC F0.6: Bidang KB diberi segmen "PUS" = lima kategori.
 CREATE TABLE agency_categories (
   agency_id     BIGINT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
-  jenis_sasaran TEXT   NOT NULL CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta')),
+  jenis_sasaran TEXT   NOT NULL CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita')),
   PRIMARY KEY (agency_id, jenis_sasaran)
 );
 
@@ -212,6 +210,7 @@ CREATE TABLE records (
   -- taksonomi (ADR-5, FR-2.4). jenis_sasaran sengaja TIDAK dideklarasikan di
   -- sini karena jenis_sasaran juga ada di FIELD_ORDER; batasan nilainya
   -- dituliskan pada kolom proyeksinya agar tidak terdefinisi dua kali.
+  -- Kategori (ADR-5): Catin, Ibu Hamil, Ibu Nifas, Baduta, Balita.
   -- Satu record dapat mengisi beberapa section:
   -- terpapar_rokok, catatan_tpk muncul di >1 section.
   -- Karena itu section disimpan sebagai larik, bukan satu nilai.
@@ -235,7 +234,7 @@ CREATE TABLE records (
   tanggal_lahir       DATE         ,  -- Tanggal Lahir
   usia                NUMERIC(4,1) ,  -- Usia (tahun)
   alamat              TEXT         ,  -- Alamat
-  jenis_sasaran       TEXT          NOT NULL CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta')),  -- Jenis Sasaran
+  jenis_sasaran       TEXT          NOT NULL CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita')),  -- Jenis Sasaran
   -- section C (Kondisi Rumah & Lingkungan)
   sumber_air          TEXT         ,  -- Akses Air Minum
   jamban              TEXT         ,  -- Fasilitas BAB (Jamban)
@@ -633,6 +632,20 @@ CREATE POLICY agency_config_own_write ON agency_config
   WITH CHECK (agency_id = jwt_agency_id() OR jwt_role() IN ('operator', 'admin'));
 -- @@FUNGSI_END
 
+--
+-- Migrasi taksonomi: tambah kategori 'Balita' ke CHECK constraints (ADR-5).
+-- Dijalankan idempoten oleh  erapkan pada DB yang sudah ada.
+-- @@FUNGSI_START
+ALTER TABLE agency_categories
+  DROP CONSTRAINT IF EXISTS agency_categories_jenis_sasaran_check,
+  ADD CONSTRAINT agency_categories_jenis_sasaran_check
+    CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'));
+ALTER TABLE records
+  DROP CONSTRAINT IF EXISTS records_jenis_sasaran_check,
+  ADD CONSTRAINT records_jenis_sasaran_check
+    CHECK (jenis_sasaran IN ('Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'));
+-- @@FUNGSI_END
+
 -- Kuota hanya boleh diubah Admin/operator, tidak oleh instansi sendiri.
 -- Instansi boleh MEMBACA kuotanya sendiri supaya bisa menampilkan sisa
 -- kuota, tapi tidak boleh menaikkan sendiri -- kalau bisa, rate limit bukan
@@ -844,3 +857,10 @@ GRANT EXECUTE ON FUNCTION cari_kunci(TEXT) TO PUBLIC;
 -- @@FUNGSI_END
 
 COMMIT;
+
+
+
+
+
+
+

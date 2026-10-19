@@ -24,7 +24,7 @@ const { TYPES, NUMERIC_FIELDS, FORCED_TEXT } = require('./field-types');
  * Naikkan `schema_version` setiap kali algoritma kanonikalisasi berubah.
  * Hash lama tetap dapat diverifikasi selama versi lamanya masih tersedia.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** Skala desimal yang diizinkan untuk sebuah kolom, dari deklarasi tipenya. */
 function scaleOf(field) {

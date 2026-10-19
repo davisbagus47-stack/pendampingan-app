@@ -18,7 +18,7 @@ Aplikasi formulir pendampingan keluarga untuk program penurunan stunting berdasa
 - Pencarian sasaran otomatis berdasarkan NIK atau nama
 - Auto-fill form dari data sebelumnya
 - Validasi input sisi klien & server (NIK 16 digit, field wajib)
-- Pemeriksaan kondisional berdasarkan jenis sasaran (Ibu Hamil, Catin, Ibu Nifas, Baduta)
+- Pemeriksaan kondisional berdasarkan jenis sasaran (Ibu Hamil, Catin, Ibu Nifas, Baduta, Balita)
 - Auto-flag risiko stunting untuk Baduta (ASI tidak eksklusif, imunisasi terlambat, perkembangan terlambat)
 - Data tersimpan otomatis ke Google Sheets
 

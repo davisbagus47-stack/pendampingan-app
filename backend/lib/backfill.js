@@ -427,7 +427,7 @@ function rencanaBackfill(opsi) {
       tolak('jenisSasaran tidak dipetakan ke taksonomi ADR-5', 'taksa-tak-dikenal');
       return;
     }
-    if (jenis !== 'Catin' && jenis !== 'Ibu Hamil' && jenis !== 'Ibu Nifas' && jenis !== 'Baduta') {
+    if (jenis !== 'Catin' && jenis !== 'Ibu Hamil' && jenis !== 'Ibu Nifas' && jenis !== 'Baduta' && jenis !== 'Balita') {
       tolak(
         'jenisSasaran "' + jenis + '" ada di luar taksonomi ADR-5',
         'taksonomi',

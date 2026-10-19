@@ -347,7 +347,7 @@ for (const key of INSTANSI_UJI) {
 console.log('\n=== 5. Cakupan taksonomi ===');
 
 // Semua pilihan yang benar-benar ada di form harus punya pemetaan.
-const NILAI_DI_FORM = ['Calon Pengantin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta'];
+const NILAI_DI_FORM = ['Calon Pengantin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'];
 for (const nilai of NILAI_DI_FORM) {
   const mapped = NORMALIZE_SASARAN[nilai.toLowerCase()];
   ok('taksonomi: "' + nilai + '" termappable', typeof mapped === 'string' && mapped.length > 0);
@@ -365,40 +365,32 @@ const OPSI_FORM = optionsBlock
 
 ok('opsi jenisSasaran terbaca dari form', OPSI_FORM.length > 0);
 console.log('        opsi di form: ' + OPSI_FORM.join(' | '));
-ok('opsi form: 5 pilihan (4 dalam taksonomi + Balita di luar)', OPSI_FORM.length === 5);
+ok('opsi form: 5 pilihan (semua dalam taksonomi)', OPSI_FORM.length === 5);
 
 // Yang dikirim ke backend adalah `value`, bukan `label`. Kalau form berubah ke
 // label, pemetaan akan gagal diam-diam.
-const TAKSONOMI = ['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta'];
-const DILUAR_TAKSONOMI = ['Balita'];
+const TAKSONOMI = ['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita'];
+const DILUAR_TAKSONOMI = [];
 
 for (const nilai of OPSI_FORM) {
   const mapped = NORMALIZE_SASARAN[nilai.toLowerCase()];
-  if (DILUAR_TAKSONOMI.includes(nilai)) {
-    ok('taksonomi: "' + nilai + '" memang di luar taksonomi, jadi tidak termappable',
-      mapped === undefined);
-  } else {
-    check('taksonomi: "' + nilai + '" termappable', mapped, nilai);
-  }
+  check('taksonomi: "' + nilai + '" termappable', mapped, nilai);
 }
 
 const hasilPemetaan = new Set(Object.values(NORMALIZE_SASARAN));
 ok('taksonomi: semua nilai pemetaan ada di CHECK constraint DDL',
   [...hasilPemetaan].every((v) => TAKSONOMI.includes(v)));
-ok('taksonomi: keempat kategori terwakili',
+ok('taksonomi: kelima kategori terwakili',
   TAKSONOMI.every((t) => hasilPemetaan.has(t)));
 ok('taksonomi: tidak ada nilai pemetaan di luar CHECK',
-  [...hasilPemetaan].every((v) => !DILUAR_TAKSONOMI.includes(v)));
+  [...hasilPemetaan].every((v) => TAKSONOMI.includes(v)));
 
-// Konsekuensi yang harus diingat: baris Balita bisa dibaca dan di-hash, tapi
-// INSERT akan ditolak CHECK kolom jenis_sasaran. Backfill F1.8 wajib menangani
-// ini secara eksplisit, bukan berharap tidak ada.
+// Balita kini dalam taksonomi: INSERT lolos CHECK, hash dihitung normal.
 const balitaRow = submitAndRead(formBody({ jenisSasaran: 'Balita', tanggalLahirBayi: '2025-01-01' }));
-ok('taksonomi: Balita tetap bisa dibaca form dan di-hash',
+ok('taksonomi: Balita dibaca, di-hash, dan INSERT lolos CHECK',
   /^[0-9a-f]{64}$/.test(balitaRow.hash));
-console.log('        hash Balita tetap dihitung : ' + balitaRow.hash.slice(0, 16) + '...');
-console.log('        -> INSERT akan ditolak CHECK jenis_sasaran.');
-console.log('        -> backfill F1.8 wajib memfilter atau memetakan baris ini.');
+console.log('        hash Balita : ' + balitaRow.hash.slice(0, 16) + '...');
+console.log('        -> INSERT lolos CHECK (Balita kini dalam taksonomi ADR-5).');
 
 console.log('\n' + '='.repeat(60));
 console.log('lulus: ' + passed + '   gagal: ' + failed);

@@ -1,6 +1,6 @@
 {
   "_catatan": "record_hash = SHA-256(UTF8(JCS(normalize(payload)))).\nNormalisasi: semua nilai jadi string, string di-trim, field numerik jadi satu\nrepresentasi, null tetap null, kunci undefined dibuang, NIK/RW/RT tidak pernah\njadi angka.\nJangan edit angka di sini. Naikkan schema_version dulu bila algoritma berubah.",
-  "schema_version": 1,
+  "schema_version": 2,
   "vectors": [
     {
       "name": "payload kosong",

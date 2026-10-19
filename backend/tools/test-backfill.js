@@ -122,11 +122,6 @@ console.log('\n=== 2. Penolakan yang disengaja ===');
 // ===========================================================================
 
 {
-  const balita = rencana([Object.assign(BARIS(), { jenisSasaran: 'Balita' })]);
-  eq('Balita ditolak', balita.records.length, 0);
-  eq('Balita tercatat sebagai ditolak', balita.ditolak.length, 1);
-  ok('alasan Balita menyebut taksonomi', /taksonomi/.test(balita.ditolak[0].alasan));
-
   const takDikenal = rencana([Object.assign(BARIS(), { jenisSasaran: 'Zombie' })]);
   eq('jenisSasaran tak dikenal ditolak', takDikenal.records.length, 0);
 
@@ -631,27 +626,27 @@ console.log('\n=== 9b. Keluar dengan pesan, bukan stack trace ===');
     // laporan. Versi pertama tetap exit 1 karena cek "ada baris ditolak"
     // menghitung baris taksonomi yang sudah di-opt-in -- sehingga opt-in
     // tidak pernah berlaku untuk dry-run.
-    const balita = Object.assign(BARIS(), { jenisSasaran: 'Balita' });
+    const taksonomiLain = Object.assign(BARIS(), { jenisSasaran: 'Zombie' });
     const tanpaNik = Object.assign(BARIS(), { nik: '', jenisSasaran: 'Ibu Hamil' });
 
-    const balitaDulu = path.join(dir, 'balita.json');
-    fs.writeFileSync(balitaDulu, JSON.stringify([balita], null, 2), 'utf8');
-    const takBoleh = jalan(['--institution', 'kota-bogor', '--input', balitaDulu,
-      '--date-order', 'ddmmyyyy', '--dry-run']);
-    eq('Balita tanpa opt-in tetap menggagalkan', takBoleh.kode, 1);
-    ok('dan menyebut --skip-balita', /--skip-balita tidak diberikan/.test(takBoleh.err));
+const taksonomiFile = path.join(dir, 'taksonomi.json');
+fs.writeFileSync(taksonomiFile, JSON.stringify([taksonomiLain], null, 2), 'utf8');
+const takBoleh = jalan(['--institution', 'kota-bogor', '--input', taksonomiFile,
+  '--date-order', 'ddmmyyyy', '--dry-run']);
+eq('Taksonomi di luar ADR-5 tanpa opt-in tetap menggagalkan', takBoleh.kode, 1);
+ok('dan menyebut --skip-balita', /--skip-balita tidak diberikan/.test(takBoleh.err));
 
-    const boleh = jalan(['--institution', 'kota-bogor', '--input', balitaDulu,
-      '--skip-balita', '--date-order', 'ddmmyyyy', '--dry-run']);
-    eq('Balita dengan --skip-balita: dry-run bersih', boleh.kode, 0);
-    ok('tetapi barisnya tetap dilaporkan sebagai ditolak',
-      /ditolak\s+:\s+1/.test(boleh.out));
+const boleh = jalan(['--institution', 'kota-bogor', '--input', taksonomiFile,
+  '--skip-balita', '--date-order', 'ddmmyyyy', '--dry-run']);
+eq('Taksonomi di luar ADR-5 dengan --skip-balita: dry-run bersih', boleh.kode, 0);
+ok('tetapi barisnya tetap dilaporkan sebagai ditolak',
+  /ditolak\s+:\s+1/.test(boleh.out));
 
     // Opt-in hanya berlaku untuk taksonomi. NIK kosong harus tetap
     // menggagalkan walau --skip-balita diberikan, atau opt-innya jadi
     // terlalu luas.
-    const campur = path.join(dir, 'campur.json');
-    fs.writeFileSync(campur, JSON.stringify([balita, tanpaNik], null, 2), 'utf8');
+const campur = path.join(dir, 'campur.json');
+fs.writeFileSync(campur, JSON.stringify([taksonomiLain, tanpaNik], null, 2), 'utf8');
     const campurOptIn = jalan(['--institution', 'kota-bogor', '--input', campur,
       '--skip-balita', '--date-order', 'ddmmyyyy', '--dry-run']);
     eq('penolakan lain tetap menggagalkan meski --skip-balita', campurOptIn.kode, 1);
@@ -661,14 +656,14 @@ console.log('\n=== 9b. Keluar dengan pesan, bukan stack trace ===');
     // Yazaman opt-in: baris taksonomi yang dilewati tidak boleh muncul di SQL.
     const sql = path.join(dir, 'out.sql');
     const sah = Object.assign(BARIS(), { nik: '3201234567891', jenisSasaran: 'Ibu Hamil' });
-    fs.writeFileSync(campur, JSON.stringify([balita, sah], null, 2), 'utf8');
+    fs.writeFileSync(campur, JSON.stringify([taksonomiLain, sah], null, 2), 'utf8');
     const tulis = jalan(['--institution', 'kota-bogor', '--input', campur,
       '--skip-balita', '--date-order', 'ddmmyyyy', '--out', sql]);
     eq('jalur --out tetap menulis walau ada penolakan', tulis.kode, 0);
     const isiSql = fs.readFileSync(sql, 'utf8');
     eq('hanya record yang lolos taksonomi yang masuk SQL',
       (isiSql.match(/INSERT INTO records/g) || []).length, 1);
-    ok('SQL tidak memuat baris taksonomi', !/Balita/.test(isiSql));
+    ok('SQL tidak memuat baris taksonomi di luar ADR-5', !/Zombie/.test(isiSql));
     ok('SQL memuat record yang sah', /Sari Dewi/.test(isiSql));
 
     // Locale bawaan proyek: "hari dulu" sudah dikonfirmasi pemilik proyek, jadi

@@ -69,7 +69,7 @@ function main() {
   console.log('\n=== 2. parseQuery: nilai buruk DITOLAK, bukan diabaikan ===');
 
   eq('kategori_1 di luar taksonomi ditolak',
-    kode(() => q.parseQuery({ kategori_1: 'Balita' })), 'INVALID_PARAM');
+    kode(() => q.parseQuery({ kategori_1: 'Z' })), 'INVALID_PARAM');
   eq('kategori_2 di luar A..I ditolak',
     kode(() => q.parseQuery({ kategori_2: 'Z' })), 'INVALID_PARAM');
   eq('tanggal_mulai bukan ISO ditolak',

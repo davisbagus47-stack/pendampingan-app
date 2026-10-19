@@ -30,7 +30,7 @@ const { selectList } = require('./column-grants');
 const canonical = require('./canonical');
 
 /** Kategori_1 yang sah (ADR-5). Sama dengan CHECK `records.jenis_sasaran`. */
-const KATEGORI_1 = Object.freeze(['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta']);
+const KATEGORI_1 = Object.freeze(['Catin', 'Ibu Hamil', 'Ibu Nifas', 'Baduta', 'Balita']);
 
 /** Kategori_2 yang sah: section A..I (ADR-5). */
 const KATEGORI_2 = Object.freeze(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']);
