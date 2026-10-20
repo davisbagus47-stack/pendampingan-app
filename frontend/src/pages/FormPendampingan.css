@@ -439,6 +439,10 @@
   color: #2b3440;
   white-space: pre-wrap;
   word-wrap: break-word;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .modal-footer {
@@ -468,5 +472,21 @@
   .modal-dialog {
     margin: 16px;
     max-width: calc(100% - 32px);
+  }
+  .modal-body {
+    padding: 18px;
+  }
+  .modal-body pre {
+    font-size: 13px;
+  }
+  .modal-header {
+    padding: 16px 18px;
+  }
+  .modal-footer {
+    padding: 12px 18px;
+  }
+  .modal-footer .btn-primary {
+    padding: 10px 24px;
+    font-size: 14px;
   }
 }
