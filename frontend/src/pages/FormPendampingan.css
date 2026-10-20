@@ -1,9 +1,22 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+}
+
 .gov-page {
   min-height: 100vh;
   background: #eef1f5;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #2b3440;
   padding-bottom: 40px;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .gov-header {
@@ -378,6 +391,21 @@
 
   .form-actions {
     text-align: center;
+  }
+
+  .card {
+    padding: 16px 16px;
+    margin-bottom: 14px;
+  }
+
+  .field {
+    width: 100%;
+  }
+
+  .field input,
+  .field select {
+    width: 100%;
+    box-sizing: border-box;
   }
 }
 
