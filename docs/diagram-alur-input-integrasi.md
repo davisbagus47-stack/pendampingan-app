@@ -40,35 +40,74 @@ flowchart TD
 
 **Catatan privasi:** data pribadi lengkap tetap berada di penyimpanan aplikasi. Blockchain digunakan untuk bukti hash/commitment dan metadata anchoring, bukan untuk menaruh payload pribadi mentah.
 
-## 2. Alur integrasi aplikasi atau instansi lain
+## 2. Integrasi antarinstansi: akses kategori, tambah data, dan koreksi
+
+### Diagram alur hak akses dan operasi data
 
 ```mermaid
-flowchart LR
-    INST["Aplikasi / Instansi Mitra"] -->|HTTPS + X-Agency-Key| API["Backend API<br/>Vercel"]
-    API --> AUTH{"Verifikasi API key<br/>dan status instansi"}
-    AUTH -->|Gagal / dicabut| DENY["401 / ditolak<br/>dicatat pada access_log"]
-    AUTH -->|Valid| GRANT["Periksa hak akses<br/>kategori, kolom, dan cakupan"]
-    GRANT -->|Tidak diizinkan| BLOCK["403 / ditolak"]
-    GRANT -->|Diizinkan| ROUTE{"Operasi"}
-    ROUTE -->|Baca| READ["GET /api/v1/records"]
-    ROUTE -->|Tambah / koreksi| WRITE["POST /api/v1/records"]
-    READ --> DB[("Supabase PostgreSQL")]
-    WRITE --> DB
-    WRITE --> OUTBOX[("records + chain_outbox")]
-    OUTBOX --> ANCHOR["Worker / anchoring Sepolia"]
-    DB --> AUDIT["access_log<br/>jejak akses API"]
-    READ --> RESP["Respons berisi<br/>data sesuai grant"]
-    WRITE --> RESP
-    RESP --> INST
+flowchart TD
+    ADMIN["Operator / admin"] --> CONFIG["Konfigurasi instansi aktif<br/>API key, kategori, dan cakupan wilayah"]
+    CONFIG --> CATS[("agency_categories<br/>kategori yang diberikan")]
+    CONFIG --> SCOPE[("agency_desa_scope<br/>batas desa / kecamatan")]
+    CONFIG --> KEYS[("agency_api_keys<br/>kunci API instansi")]
+
+    APP["Aplikasi / instansi mitra"] -->|HTTPS + X-Agency-Key| API["Backend API · Vercel"]
+    KEYS -. "verifikasi identitas" .-> API
+    API --> AUTH{"API key valid<br/>dan instansi aktif?"}
+    AUTH -->|Tidak| NOAUTH["401 / ditolak<br/>access_log"]
+    AUTH -->|Ya| OP{"Operasi yang diminta"}
+
+    OP -->|Baca| READ["GET /api/v1/records<br/>filter kategori"]
+    READ --> RGRANT{"Kategori, wilayah,<br/>dan kolom diizinkan?"}
+    RGRANT -->|Tidak| DENYR["403 / ditolak"]
+    RGRANT -->|Ya| READDB[("Supabase · records")]
+    READDB --> EXIST["Data + record_id + version"]
+
+    OP -->|Tambah baru| CREATE["POST /api/v1/records<br/>tanpa record_id dan version"]
+    OP -->|Koreksi data| CORRECT["POST /api/v1/records<br/>sertakan record_id + version lama"]
+
+    CREATE --> VALID["Validasi payload, kategori,<br/>wilayah, dan grant instansi"]
+    CORRECT --> VALID
+    CATS -. "cek kategori" .-> VALID
+    SCOPE -. "cek cakupan wilayah" .-> VALID
+    VALID -->|Tidak diizinkan / tidak valid| DENYW["400 / 403 / 404 / 409<br/>sesuai penyebab"]
+    VALID -->|Tambah valid| V1["Buat record versi 1"]
+    EXIST -->|Pengguna memilih koreksi| CORRECT
+    VALID -->|Koreksi valid dan versi cocok| VN["Buat versi baru N+1<br/>tautkan supersedes_id"]
+
+    V1 --> TX[("Transaksi PostgreSQL<br/>records + chain_outbox")]
+    VN --> TX
+    TX --> ANCHOR["Anchor worker / DataAnchor<br/>Ethereum Sepolia"]
+    TX --> AUDIT["access_log<br/>jejak akses"]
+    ANCHOR --> RESP["Respons status / bukti transaksi"]
+    RESP --> APP
+    READDB --> APP
 ```
 
-### Mekanisme integrasi
+### Cara kerja penambahan data oleh instansi lain
 
-- **Identitas instansi:** aplikasi mitra menggunakan API key instansi pada header `X-Agency-Key` untuk endpoint ber-auth di `/api/v1/*`.
-- **Akses baca dan tulis:** `GET /api/v1/records` untuk membaca record yang diizinkan dan `POST /api/v1/records` untuk menambah atau mengoreksi record melalui backend.
-- **Hak akses:** grant kategori pada `agency_categories` menentukan kategori yang boleh diakses instansi. Pemeriksaan grant kolom mencegah kolom yang tidak diizinkan dibaca atau diekspor. Pembatasan laju permintaan diterapkan per instansi dan hasil akses dicatat pada `access_log`.
-- **Penyimpanan terpusat:** integrasi dilakukan lewat API backend, bukan dengan memberikan koneksi langsung ke database atau membagikan kredensial Google Sheets kepada aplikasi mitra.
-- **Audit blockchain:** record baru melalui jalur tulis API dapat masuk ke proses anchoring yang sama, sehingga bukti integritasnya dapat diverifikasi terpisah dari akses ke payload data.
+1. Operator/admin memberikan grant kategori yang sesuai kepada instansi di `agency_categories` dan, jika dibatasi, cakupan desa/kecamatan pada `agency_desa_scope`. Instansi harus aktif dan menggunakan API key yang valid.
+2. Aplikasi mitra mengirim `POST /api/v1/records` dengan payload formulir dan **tanpa** `record_id` serta `version`. Backend memvalidasi field wajib, kategori sasaran, grant kategori, dan cakupan wilayah.
+3. Jika diizinkan, backend membuat record baru dengan `version = 1`, mengatribusikan penulisan kepada instansi pemanggil, lalu menyimpan record dan antrean `chain_outbox` dalam satu transaksi.
+4. Proses anchoring mencatat bukti hash/commitment ke Sepolia. Kegagalan sementara di blockchain tidak membatalkan data yang sudah tersimpan; antrean dapat diproses ulang.
+
+### Cara kerja pembaruan/koreksi data yang sebelumnya dicatat instansi lain
+
+1. Instansi tujuan terlebih dahulu membaca data yang boleh dilihat lewat `GET /api/v1/records`, dengan filter `kategori_1` yang memang menjadi haknya. Respons menyediakan metadata seperti `record_id` dan `version`.
+2. Untuk mengoreksi, aplikasi mengirim kembali payload hasil koreksi lewat `POST /api/v1/records`, dengan **`record_id` dan `version` yang hendak dikoreksi**. Kedua field itu harus dikirim bersama.
+3. Backend mengecek kategori dan wilayah berdasarkan grant instansi pemanggil, memastikan versi target dapat diakses, kemudian membuat versi baru (`version = versi lama + 1`) dengan `supersedes_id` menunjuk versi sebelumnya. Baris lama **tidak ditimpa atau dihapus**.
+4. Versi baru diatribusikan kepada instansi yang melakukan koreksi. Dengan begitu riwayat perubahan tetap tersedia dan bukti hash setiap versi dapat diverifikasi sendiri.
+
+**Contoh:** Instansi B tidak otomatis bisa mengubah data kategori *Ibu Hamil* hanya karena sudah terhubung ke API. Instansi B harus memiliki grant untuk kategori tersebut dan memenuhi pembatasan wilayah. Jika tidak, penulisan ditolak sebagai `CATEGORY_NOT_GRANTED` atau `DESA_NOT_GRANTED`.
+
+### Mekanisme integrasi dan batas akses
+
+- **Identitas instansi:** aplikasi mitra mengirim API key pada header `X-Agency-Key` untuk endpoint ber-auth di `/api/v1/*`.
+- **Baca data:** `GET /api/v1/records` mengambil record sesuai filter kategori, cakupan wilayah, dan kolom yang diizinkan.
+- **Tambah atau koreksi:** `POST /api/v1/records` membuat record baru jika `record_id`/`version` tidak dikirim, atau membuat versi koreksi jika keduanya dikirim.
+- **Grant kategori bukan penambahan kategori baru:** `agency_categories` memberi akses pada kategori yang sudah dikenal aplikasi. Membuat jenis sasaran baru memerlukan perubahan taksonomi, form, validasi backend, dan skema database.
+- **Keamanan:** integrasi dilakukan lewat backend API, bukan melalui koneksi langsung ke Supabase atau berbagi kredensial Google Sheets.
+- **Pengaturan administratif:** diagram menunjukkan konfigurasi hak akses yang dipakai backend. Diagram ini tidak menyatakan adanya endpoint publik untuk mengubah grant; perubahan grant harus melalui mekanisme operator/admin yang disiapkan proyek.
 
 ## 3. Hak akses kategori vs. penambahan jenis sasaran
 
