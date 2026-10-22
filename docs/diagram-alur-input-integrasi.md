@@ -122,7 +122,7 @@ Kedua hal ini berbeda:
 |---|---|---|
 | Pencarian sasaran dari master | `GET /api/sasaran` | Jalur form publik; membaca referensi sasaran |
 | Submit formulir petugas | `POST /api/submit` | Form publik; validasi, pencatatan Sheet + PostgreSQL, dan proses anchoring hybrid |
-| Integrasi tulis antarinstansi | `POST /api/v1/records` | Memerlukan API key instansi dan grant sesuai aturan backend |
+| Integrasi tulis antarinstansi | `POST /api/v1/records` | Tambah data baru tanpa `record_id`/`version`, atau koreksi dengan keduanya; memerlukan API key dan grant kategori/wilayah |
 | Integrasi baca antarinstansi | `GET /api/v1/records` | Hanya data/kolom yang diizinkan yang dikembalikan |
 | Pemrosesan antrean anchoring | `GET /api/cron/anchor` | Endpoint scheduler; harus memakai `CRON_SECRET` |
 | Bukti audit on-chain | `GET /api/v1/audit/proof` | Bukti Merkle dan receipt on-chain sesuai implementasi |
