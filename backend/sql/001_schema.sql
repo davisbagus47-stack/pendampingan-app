@@ -171,6 +171,30 @@ CREATE UNIQUE INDEX idx_agency_api_keys_one_standby
   ON agency_api_keys (agency_id) WHERE status = 'standby';
 
 -- ============================================================================
+-- TPK_MEMBERS - daftar anggota TPK dari Surat Keputusan
+-- ============================================================================
+CREATE TABLE tpk_members (
+  id              BIGSERIAL PRIMARY KEY,
+  nik             TEXT NOT NULL UNIQUE CHECK (nik ~ '^[0-9]{16}$'),
+  nama_lengkap    TEXT NOT NULL,
+  id_tpk          TEXT,
+  unsur           TEXT,
+  tim             TEXT,
+  daerah_binaan   TEXT,
+  no_hp           TEXT,
+  no_rek_jatim    TEXT,
+  tempat_lahir    TEXT,
+  tanggal_lahir   DATE,
+  operator_hp     TEXT,
+  pendidikan      TEXT,
+  desa_kelurahan  TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_tpk_members_nama ON tpk_members (nama_lengkap);
+CREATE INDEX idx_tpk_members_desa ON tpk_members (desa_kelurahan);
+
+-- ============================================================================
 -- RECORDS - system of record dengan versioning (ADR-1, ADR-4)
 --
 -- Kolom domain adalah PROYEKSI dari payload untuk keperluan filter
@@ -857,93 +881,6 @@ COMMENT ON FUNCTION cari_kunci(TEXT) IS
   'Cari satu baris kunci API dari key_hash. SECURITY DEFINER: berjalan sebagai pemilik supaya verifikasi bisa terjadi sebelum identitas pemanggil diketahui. Tidak mengembalikan key_hash; pemanggil hanya bisa menemukan baris yang token aslinya ia pegang.';
 
 GRANT EXECUTE ON FUNCTION cari_kunci(TEXT) TO PUBLIC;
--- @@FUNGSI_END
-
--- ============================================================================
--- SHEETS_PENDING - table + RLS (async flush ke Google Sheets)
--- Dijalankan idempoten oleh `terapkan` pada DB yang sudah ada.
--- @@FUNGSI_START
-CREATE TABLE IF NOT EXISTS sheets_pending (
-  id            BIGSERIAL PRIMARY KEY,
-  payload_json  JSONB   NOT NULL,
-  row_data      JSONB   NOT NULL,
-  status        TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'failed')),
-  attempts      INTEGER NOT NULL DEFAULT 0,
-  next_retry_at TIMESTAMPTZ,
-  last_error    TEXT,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  done_at       TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_sheets_pending_pending ON sheets_pending (next_retry_at) WHERE status IN ('pending', 'failed');
-
-ALTER TABLE sheets_pending ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sheets_pending FORCE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS sheets_pending_operator_all ON sheets_pending;
-CREATE POLICY sheets_pending_operator_all ON sheets_pending
-  FOR ALL
-  USING (jwt_role() IN ('operator', 'admin'))
-  WITH CHECK (jwt_role() IN ('operator', 'admin'));
-
-DROP POLICY IF EXISTS sheets_pending_agency_insert ON sheets_pending;
-CREATE POLICY sheets_pending_agency_insert ON sheets_pending
-  FOR INSERT
-  WITH CHECK (
-    jwt_role() = 'agency'
-    AND EXISTS (
-      SELECT 1 FROM agencies a
-      WHERE a.id = jwt_agency_id() AND a.status = 'active'
-    )
-  );
-
-DROP POLICY IF EXISTS sheets_pending_agency_select ON sheets_pending;
-CREATE POLICY sheets_pending_agency_select ON sheets_pending
-  FOR SELECT
-  USING (
-    jwt_role() = 'agency'
-    AND EXISTS (
-      SELECT 1 FROM agencies a
-      WHERE a.id = jwt_agency_id() AND a.status = 'active'
-    )
-  );
--- @@FUNGSI_END
-
--- ============================================================================
--- SHEETS_PENDING - RLS policies (async flush ke Google Sheets)
--- Dijalankan idempoten oleh `terapkan` pada DB yang sudah ada.
--- @@FUNGSI_START
-ALTER TABLE sheets_pending ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sheets_pending FORCE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS sheets_pending_operator_all ON sheets_pending;
-CREATE POLICY sheets_pending_operator_all ON sheets_pending
-  FOR ALL
-  USING (jwt_role() IN ('operator', 'admin'))
-  WITH CHECK (jwt_role() IN ('operator', 'admin'));
-
--- Agency bisa insert (menyimpan pending write) dan read (melihat status sendiri).
--- Perlu kategori yang di-grant ke instansi ini.
-DROP POLICY IF EXISTS sheets_pending_agency_insert ON sheets_pending;
-CREATE POLICY sheets_pending_agency_insert ON sheets_pending
-  FOR INSERT
-  WITH CHECK (
-    jwt_role() = 'agency'
-    AND EXISTS (
-      SELECT 1 FROM agencies a
-      WHERE a.id = jwt_agency_id() AND a.status = 'active'
-    )
-  );
-
-DROP POLICY IF EXISTS sheets_pending_agency_select ON sheets_pending;
-CREATE POLICY sheets_pending_agency_select ON sheets_pending
-  FOR SELECT
-  USING (
-    jwt_role() = 'agency'
-    AND EXISTS (
-      SELECT 1 FROM agencies a
-      WHERE a.id = jwt_agency_id() AND a.status = 'active'
-    )
-  );
 -- @@FUNGSI_END
 
 COMMIT;

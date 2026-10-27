@@ -425,6 +425,33 @@ function emit(catalog) {
   w('  ON agency_api_keys (agency_id) WHERE status = \'standby\';');
   w();
 
+  // Daftar anggota TPK dari Surat Keputusan. NIK menjadi kunci lookup dan
+  // divalidasi ketat agar data impor tidak masuk dalam bentuk terpotong.
+  w('-- ============================================================================');
+  w('-- TPK_MEMBERS - daftar anggota TPK dari Surat Keputusan');
+  w('-- ============================================================================');
+  w('CREATE TABLE tpk_members (');
+  w('  id              BIGSERIAL PRIMARY KEY,');
+  w('  nik             TEXT NOT NULL UNIQUE CHECK (nik ~ \'^[0-9]{16}$\'),');
+  w('  nama_lengkap    TEXT NOT NULL,');
+  w('  id_tpk          TEXT,');
+  w('  unsur           TEXT,');
+  w('  tim             TEXT,');
+  w('  daerah_binaan   TEXT,');
+  w('  no_hp           TEXT,');
+  w('  no_rek_jatim    TEXT,');
+  w('  tempat_lahir    TEXT,');
+  w('  tanggal_lahir   DATE,');
+  w('  operator_hp     TEXT,');
+  w('  pendidikan      TEXT,');
+  w('  desa_kelurahan  TEXT,');
+  w('  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),');
+  w('  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()');
+  w(');');
+  w('CREATE INDEX idx_tpk_members_nama ON tpk_members (nama_lengkap);');
+  w('CREATE INDEX idx_tpk_members_desa ON tpk_members (desa_kelurahan);');
+  w();
+
   // --- records
   w('-- ============================================================================');
   w('-- RECORDS - system of record dengan versioning (ADR-1, ADR-4)');

@@ -19,7 +19,8 @@
     "express": "^5.1.0",
     "google-spreadsheet": "^4.1.4",
     "googleapis": "^148.0.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "libpg-query": "^18.1.5"

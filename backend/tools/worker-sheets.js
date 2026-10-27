@@ -72,6 +72,9 @@ async function flushOnce({ batch = BATCH_SIZE, pool } = {}) {
     const sheets = await getSheetsClient();
     await ensureHeaders(sheets);
 
+    const limit = Math.max(1, Math.min(100, Number(batch) || BATCH_SIZE || 50));
+    const maxAttempts = Math.max(1, MAX_ATTEMPTS || 3);
+
     // Ambil pending/failed yang siap dicoba
     const pending = await pg.query(
       `SELECT id, payload_json, row_data FROM sheets_pending
@@ -80,15 +83,12 @@ async function flushOnce({ batch = BATCH_SIZE, pool } = {}) {
          AND (next_retry_at IS NULL OR next_retry_at <= now())
        ORDER BY created_at
        LIMIT $2`,
-      [3, 50] // max 3 attempts, batch 50
+      [maxAttempts, limit]
     );
 
     if (pending.rows.length === 0) {
       return { ok: true, flushed: 0 };
     }
-
-    const sheetsClient = await getSheetsClient();
-    const spreadsheetId = process.env.SHEET_ID;
 
     let flushed = 0;
     let failed = 0;
@@ -116,7 +116,7 @@ async function flushOnce({ batch = BATCH_SIZE, pool } = {}) {
           [e.message, row.id]
         );
         const attempts = attempt.rows[0]?.attempts || 0;
-        if (attempts >= 3) {
+        if (attempts >= maxAttempts) {
           await pg.query(
             `UPDATE sheets_pending SET status='failed' WHERE id=$1`,
             [row.id]
