@@ -291,3 +291,7 @@ Lihat [`docs/prosedur-kunci.md`](docs/prosedur-kunci.md) untuk:
 ## Lisensi
 
 Dikembangkan untuk kebutuhan internal program penurunan stunting BKKBN.
+
+## Diagram Alur Input dan Integrasi Antarinstansi
+
+Dokumentasi diagram alur input formulir, penyimpanan Google Sheets dan Supabase, anchoring Sepolia, serta integrasi baca/tulis antarinstansi tersedia di [docs/diagram-alur-input-integrasi.md](docs/diagram-alur-input-integrasi.md).
