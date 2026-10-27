@@ -246,6 +246,26 @@ Env di dashboard Vercel (Settings → Environment Variables):
 Env di dashboard Vercel:
 - `REACT_APP_API_URL` = URL backend Vercel (mis. `https://pendampingan-app-mvbo.vercel.app`)
 
+### Setup funding wallet TPK
+
+Untuk mengisi saldo wallet TPK baru secara otomatis, jalankan tool lokal dari PowerShell:
+
+```powershell
+cd backend
+.\tools\setup-tpk-funding.ps1
+```
+
+Tool meminta private key treasury secara tersembunyi, memperbarui `.env` lokal, dan tidak menampilkan private key. Untuk mengirim variable yang sama ke Vercel, pasang serta login Vercel CLI, link project backend, lalu jalankan:
+
+```powershell
+npm install --global vercel
+vercel login
+vercel link --project pendampingan-app-mvbo
+.\tools\setup-tpk-funding.ps1 -SyncVercel
+```
+
+Gunakan wallet treasury Sepolia khusus. Jangan gunakan private key wallet TPK pengguna dan jangan commit file `backend/.env`.
+
 ### Auto-deploy
 Setelah 2 project terhubung ke repo GitHub & env diatur, setiap `git push main` otomatis build & deploy. Rahasia **tidak pernah** di-commit ke GitHub — hanya di dashboard Vercel.
 

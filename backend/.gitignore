@@ -1,5 +1,6 @@
 node_modules/
 .env
+.vercel/
 service_account.json
 npm-debug.log*
 print_creds.js
