@@ -190,6 +190,11 @@ CREATE TABLE tpk_members (
   desa_kelurahan  TEXT,
   wallet_address  TEXT UNIQUE,
   wallet_created_at TIMESTAMPTZ,
+  funding_status  TEXT,
+  funding_tx_hash TEXT,
+  funding_error   TEXT,
+  funding_amount_wei NUMERIC(78,0),
+  funding_attempted_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );

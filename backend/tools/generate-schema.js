@@ -447,6 +447,11 @@ function emit(catalog) {
   w('  desa_kelurahan  TEXT,');
   w('  wallet_address  TEXT UNIQUE,');
   w('  wallet_created_at TIMESTAMPTZ,');
+  w('  funding_status  TEXT,');
+  w('  funding_tx_hash TEXT,');
+  w('  funding_error   TEXT,');
+  w('  funding_amount_wei NUMERIC(78,0),');
+  w('  funding_attempted_at TIMESTAMPTZ,');
   w('  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),');
   w('  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()');
   w(');');

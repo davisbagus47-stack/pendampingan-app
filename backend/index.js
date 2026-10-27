@@ -23,6 +23,7 @@ const anchorRecord = require('./lib/anchor-record.js');
 const canonical = require('./lib/canonical.js');
 const auditLogChain = require('./lib/audit-log-chain.js');
 const zkpAudit = require('./lib/zkp-audit.js');
+const tpkFunding = require('./lib/tpk-funding.js');
 const config = require('./lib/config.js');
 const { columnName } = require('./lib/field-types');
 const { deriveSections } = require('./lib/sections.js');
@@ -1445,16 +1446,53 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
   try {
     const result = await db.transaksi({ role: 'operator' }, async (client) => client.query(
       `UPDATE tpk_members
-          SET wallet_address = COALESCE(wallet_address, $1), wallet_created_at = COALESCE(wallet_created_at, now())
+          SET wallet_address = COALESCE(wallet_address, $1),
+              wallet_created_at = COALESCE(wallet_created_at, now()),
+              funding_status = CASE WHEN wallet_address IS NULL THEN 'pending' ELSE funding_status END
         WHERE nik = $2
           AND (wallet_address IS NULL OR lower(wallet_address) = lower($1))
-      RETURNING nik, nama_lengkap, id_tpk, wallet_address`,
+      RETURNING nik, nama_lengkap, id_tpk, wallet_address, funding_status`,
       [walletAddress, nik]
     ));
     if (result.rowCount === 0) {
       return res.status(409).json({ success: false, message: 'Wallet TPK sudah terdaftar atau identitas tidak cocok.' });
     }
-    return res.json({ success: true, registered: true, walletAddress: result.rows[0].wallet_address, name: result.rows[0].nama_lengkap, nik: result.rows[0].nik });
+    const member = result.rows[0];
+    let funding = { status: 'existing' };
+    if (['pending', 'failed', 'processing'].includes(member.funding_status)) {
+      const claim = await db.transaksi({ role: 'operator' }, (client) => client.query(
+        `UPDATE tpk_members
+            SET funding_status = 'processing', funding_attempted_at = now(), funding_error = NULL
+          WHERE nik = $1 AND lower(wallet_address) = lower($2)
+            AND (funding_status IN ('pending', 'failed')
+              OR (funding_status = 'processing' AND funding_attempted_at < now() - interval '15 minutes'))
+        RETURNING nik`,
+        [member.nik, member.wallet_address]
+      ));
+      if (claim.rowCount === 0) {
+        funding = { status: 'processing', message: 'Pendanaan wallet sedang diproses.' };
+      } else {
+        funding = await tpkFunding.antreKirim(member.wallet_address);
+        await db.transaksi({ role: 'operator' }, (client) => client.query(
+          `UPDATE tpk_members
+              SET funding_status = $1,
+                  funding_tx_hash = $2,
+                  funding_error = $3,
+                  funding_amount_wei = $4,
+                  funding_attempted_at = now()
+            WHERE nik = $5 AND lower(wallet_address) = lower($6)`,
+          [
+            funding.status === 'submitted' ? 'submitted' : funding.status === 'failed' ? 'failed' : 'pending',
+            funding.txHash || null,
+            funding.message || null,
+            funding.amountEth ? tpkFunding.konfigurasi().amountWei.toString() : null,
+            member.nik,
+            member.wallet_address,
+          ]
+        ));
+      }
+    }
+    return res.json({ success: true, registered: true, walletAddress: member.wallet_address, name: member.nama_lengkap, nik: member.nik, idTpk: member.id_tpk, funding });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Pengaitan wallet TPK gagal:`, error.message);
     return res.status(500).json({ success: false, message: 'Wallet gagal dikaitkan.' });

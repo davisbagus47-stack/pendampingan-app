@@ -71,12 +71,12 @@ export default function Web3Login({ onAuthenticated }) {
     setBusy(true);
     try {
       const wallet = Wallet.createRandom();
-      await bindWallet(wallet.address);
+      const linked = await bindWallet(wallet.address);
       const encrypted = await wallet.encrypt(password);
       localStorage.setItem(STORAGE_KEY, encrypted); setKeystore(encrypted); setAddress(wallet.address); setPassword('');
       await refreshBalance(wallet.address);
       setNotice('Wallet berhasil dibuat dan dikaitkan dengan data TPK.');
-      onAuthenticated({ address: wallet.address, name: member.name, nik: member.nik, idTpk: member.idTpk, network: 'Sepolia' });
+      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
     } catch (e) { setError(e.message || 'Wallet gagal dibuat.'); }
     finally { setBusy(false); }
   };
@@ -87,7 +87,7 @@ export default function Web3Login({ onAuthenticated }) {
       const wallet = await Wallet.fromEncryptedJson(keystore, password);
       const linked = await bindWallet(wallet.address);
       await refreshBalance(wallet.address); setAddress(wallet.address); setPassword('');
-      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia' });
+      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
     } catch (e) { setError(e.message || 'Password wallet salah atau wallet tidak cocok dengan identitas.'); }
     finally { setBusy(false); }
   };

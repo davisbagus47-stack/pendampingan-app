@@ -142,6 +142,14 @@ const Field = ({ label, required, children, full }) => (
 );
 
 const shortAddress = (address = '') => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
+const fundingMessage = (funding) => {
+  if (!funding || funding.status === 'existing') return '';
+  if (funding.status === 'submitted') return `${funding.amountEth || '0.1'} Sepolia ETH sedang dikirim ke wallet.`;
+  if (funding.status === 'processing') return 'Pendanaan Sepolia ETH sedang diproses.';
+  if (funding.status === 'not_configured') return 'Wallet berhasil dibuat, tetapi pendanaan otomatis belum dikonfigurasi.';
+  if (funding.status === 'disabled') return 'Wallet berhasil dibuat, tetapi pendanaan otomatis belum diaktifkan.';
+  return 'Wallet berhasil dibuat, tetapi pendanaan otomatis gagal dan akan dicoba lagi.';
+};
 
 const FormPendampingan = ({ session, onLogout }) => {
   const [formData, setFormData] = useState({ ...FORM_AWAL, namaTPK: session?.name || '' });
@@ -314,6 +322,7 @@ const FormPendampingan = ({ session, onLogout }) => {
               <span>Login sebagai</span>
               <strong>{session?.name || 'TPK'}</strong>
               <small>{shortAddress(session?.address)} · Sepolia</small>
+              {fundingMessage(session?.funding) ? <small className="gov-funding-status">{fundingMessage(session.funding)}</small> : null}
             </div>
             <button type="button" className="btn-logout" onClick={onLogout}>Keluar</button>
           </div>

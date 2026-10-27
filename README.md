@@ -186,6 +186,10 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast
 | `ANCHOR_RPC_URL` | Ya | Sepolia RPC endpoint (publicnode/Alchemy) |
 | `ANCHOR_PRIVATE_KEY` | Ya | Private key wallet anchor (tanpa `0x`) |
 | `ANCHOR_CONTRACT` | Ya | Alamat kontrak `DataAnchor` di Sepolia |
+| `TPK_AUTO_FUND_ENABLED` | Tidak | Set `true` untuk mengirim ETH otomatis ke wallet TPK baru |
+| `TPK_FUNDING_PRIVATE_KEY` | Tidak | Private key treasury Sepolia khusus pendanaan TPK; jangan gunakan di frontend |
+| `TPK_FUNDING_RPC_URL` | Tidak | RPC pendanaan TPK (default `ANCHOR_RPC_URL` atau PublicNode Sepolia) |
+| `TPK_FUNDING_AMOUNT_ETH` | Tidak | Jumlah per wallet baru (default `0.1`) |
 | `ANCHOR_FROM_BLOCK` | Tidak | Block mulai sinkronisasi event (default: deploy block) |
 | `ANCHOR_CRON_BATCH` | Tidak | Batch size per cron run (default: `5`) |
 | `CRON_SECRET` | Ya | Bearer token untuk `GET /api/cron/anchor` |
@@ -231,6 +235,7 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast
 Env di dashboard Vercel (Settings → Environment Variables):
 - `DATABASE_URL`, `GOOGLE_CREDENTIALS_JSON`, `SHEET_ID`, `REF_SHEET_ID`, `REF_SHEET_NAME`
 - `ANCHOR_RPC_URL`, `ANCHOR_PRIVATE_KEY`, `ANCHOR_CONTRACT`, `ANCHOR_FROM_BLOCK`, `ANCHOR_CRON_BATCH`
+- `TPK_AUTO_FUND_ENABLED`, `TPK_FUNDING_PRIVATE_KEY`, `TPK_FUNDING_RPC_URL`, `TPK_FUNDING_AMOUNT_ETH`
 - `CRON_SECRET`, `FORM_INSTITUTION_KEY`, `CORS_ORIGIN`
 
 ### 2. Frontend (folder `frontend/`)

@@ -93,6 +93,11 @@ html, body {
   font-size: 11px;
 }
 
+.gov-funding-status {
+  color: #ffd98a !important;
+  max-width: 230px;
+}
+
 .gov-session-copy strong {
   color: #ffffff;
   font-size: 13px;
