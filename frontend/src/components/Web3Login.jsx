@@ -31,6 +31,7 @@ export default function Web3Login({ onAuthenticated }) {
   const [address, setAddress] = useState('');
   const [balance, setBalance] = useState('0.0000');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -87,7 +88,7 @@ export default function Web3Login({ onAuthenticated }) {
       const wallet = Wallet.createRandom();
       const linked = await bindWallet(wallet.address);
       const encrypted = await wallet.encrypt(password);
-      localStorage.setItem(STORAGE_KEY, encrypted); setKeystore(encrypted); setAddress(wallet.address); setPassword('');
+      localStorage.setItem(STORAGE_KEY, encrypted); setKeystore(encrypted); setAddress(wallet.address); setPassword(''); setShowPassword(false);
       await refreshBalance(wallet.address);
       setNotice('Wallet berhasil dibuat dan dikaitkan dengan data TPK.');
       onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
@@ -103,7 +104,7 @@ export default function Web3Login({ onAuthenticated }) {
         throw new Error('Backup wallet tidak cocok dengan wallet yang terdaftar untuk NIK ini.');
       }
       const linked = await bindWallet(wallet.address);
-      await refreshBalance(wallet.address); setAddress(wallet.address); setPassword('');
+      await refreshBalance(wallet.address); setAddress(wallet.address); setPassword(''); setShowPassword(false);
       onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
     } catch (e) { setError(e.message || 'Password wallet salah atau wallet tidak cocok dengan identitas.'); }
     finally { setBusy(false); }
@@ -166,8 +167,10 @@ export default function Web3Login({ onAuthenticated }) {
       </div>
       {member ? <div className="wallet-status"><div><span>TPK</span><strong>{member.name}</strong></div><div><span>NIK</span><strong>{member.nik}</strong></div>{member.walletAddress ? <div><span>Wallet terdaftar</span><strong>{shortAddress(member.walletAddress)}</strong></div> : null}</div> : null}
       {member && (walletMatchesIdentity || !walletAlreadyRegistered) ? <form onSubmit={keystore ? login : (e) => { e.preventDefault(); createWallet(); }}>
-        <label htmlFor="wallet-password">Password wallet</label><input id="wallet-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={keystore ? 'Masukkan password wallet' : 'Minimal 8 karakter'} autoComplete="new-password" required />
+        <label htmlFor="wallet-password">Password wallet</label>
+        <div className="password-field"><input id="wallet-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={keystore ? 'Masukkan password wallet' : 'Minimal 8 karakter'} autoComplete="new-password" required /><button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}>{showPassword ? 'Sembunyikan' : 'Tampilkan'}</button></div>
         <button className="web3-primary" type="submit" disabled={busy}>{busy ? 'Memproses...' : keystore ? 'Buka wallet terdaftar' : 'Buat wallet sesuai identitas'}</button>
+        {keystore ? <p className="web3-forgot">Lupa password? Password tidak dapat di-reset. Wallet hanya bisa dibuka dengan password yang benar.</p> : null}
       </form> : null}
       {member?.walletAddress && !walletMatchesIdentity ? <div className="web3-recovery">
         <strong>Wallet NIK ini sudah terdaftar</strong>
