@@ -45,7 +45,28 @@ export default function Web3Login({ onAuthenticated }) {
   }, [keystore]);
 
   const refreshBalance = async (walletAddress) => {
-    try { setBalance(Number(formatEther(await provider.getBalance(walletAddress))).toFixed(4)); } catch { setBalance('--'); }
+    try {
+      const balanceWei = await provider.getBalance(walletAddress);
+      setBalance(Number(formatEther(balanceWei)).toFixed(4));
+      return balanceWei;
+    } catch {
+      setBalance('--');
+      return null;
+    }
+  };
+
+  const waitForFundedWallet = async (walletAddress, funding) => {
+    const shouldWait = ['pending', 'processing', 'submitted'].includes(funding?.status);
+    const deadline = Date.now() + (shouldWait ? 60000 : 0);
+    let balanceWei = null;
+    do {
+      balanceWei = await refreshBalance(walletAddress);
+      if (balanceWei !== null && balanceWei > 0n) return balanceWei;
+      if (Date.now() >= deadline) break;
+      setNotice(funding?.reason === 'saldo_habis' ? 'Saldo habis. Menunggu pengisian ulang Sepolia ETH...' : 'Menunggu saldo Sepolia masuk sebelum membuka form...');
+      await new Promise((resolve) => window.setTimeout(resolve, 4000));
+    } while (Date.now() < deadline);
+    throw new Error('Saldo Sepolia belum masuk. Form belum dapat dibuka. Coba lagi setelah funding berhasil.');
   };
 
   const verifyIdentity = async () => {
@@ -89,7 +110,7 @@ export default function Web3Login({ onAuthenticated }) {
       const linked = await bindWallet(wallet.address);
       const encrypted = await wallet.encrypt(password);
       localStorage.setItem(STORAGE_KEY, encrypted); setKeystore(encrypted); setAddress(wallet.address); setPassword(''); setShowPassword(false);
-      await refreshBalance(wallet.address);
+      await waitForFundedWallet(wallet.address, linked.funding);
       setNotice('Wallet berhasil dibuat dan dikaitkan dengan data TPK.');
       onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
     } catch (e) { setError(e.message || 'Wallet gagal dibuat.'); }
@@ -104,7 +125,7 @@ export default function Web3Login({ onAuthenticated }) {
         throw new Error('Backup wallet tidak cocok dengan wallet yang terdaftar untuk NIK ini.');
       }
       const linked = await bindWallet(wallet.address);
-      await refreshBalance(wallet.address); setAddress(wallet.address); setPassword(''); setShowPassword(false);
+      await waitForFundedWallet(wallet.address, linked.funding); setAddress(wallet.address); setPassword(''); setShowPassword(false);
       onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
     } catch (e) { setError(e.message || 'Password wallet salah atau wallet tidak cocok dengan identitas.'); }
     finally { setBusy(false); }
