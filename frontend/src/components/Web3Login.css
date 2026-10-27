@@ -1,6 +1,7 @@
 .web3-login { min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; background: radial-gradient(circle at 20% 10%, #153b65 0, transparent 38%), #07101f; color: #e9f2ff; }
 .web3-card { width: min(100%, 440px); box-sizing: border-box; padding: 42px 36px 30px; border: 1px solid rgba(113, 174, 255, .28); border-radius: 26px; background: rgba(12, 28, 51, .88); box-shadow: 0 24px 70px rgba(0, 0, 0, .38); }
 .web3-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; color: #07101f; background: linear-gradient(135deg, #73dcff, #8e8cff); font-size: 27px; }
+.web3-mark svg { width: 31px; height: 31px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3.2; }
 .web3-eyebrow { margin: 27px 0 8px; color: #76d8ff; font-size: 11px; font-weight: 800; letter-spacing: .18em; }
 .web3-card h1 { margin: 0; font-size: 32px; letter-spacing: -.04em; }
 .web3-subtitle { margin: 12px 0 28px; color: #a9bad2; line-height: 1.55; }

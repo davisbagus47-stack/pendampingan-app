@@ -156,7 +156,13 @@ export default function Web3Login({ onAuthenticated }) {
 
   return (
     <main className="web3-login"><section className="web3-card">
-      <div className="web3-mark">*</div><p className="web3-eyebrow">PENDAMPINGAN WEB3</p>
+      <div className="web3-mark" aria-label="Logo Pendampingan Web3">
+        <svg viewBox="0 0 48 48" role="img" aria-hidden="true">
+          <path d="M18.5 28.5 15 32a6 6 0 0 0 8.5 8.5l4-4" />
+          <path d="M29.5 19.5 33 16a6 6 0 0 0-8.5-8.5l-4 4" />
+          <path d="m18 24 12 0" />
+        </svg>
+      </div><p className="web3-eyebrow">PENDAMPINGAN WEB3</p>
       <h1>Masuk dengan wallet</h1>
       <p className="web3-subtitle">Verifikasi data TPK, lalu buat wallet Sepolia yang terikat pada identitas terdaftar.</p>
       <div className="identity-grid">
