@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Funding Admin TPK</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #07101f; color: #e9f2ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 10% 0, #173d66, transparent 36%), #07101f; }
+    main { width: min(1180px, 100%); margin: 0 auto; padding: 28px 18px 48px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 22px; }
+    h1 { margin: 0 0 6px; font-size: clamp(26px, 4vw, 38px); letter-spacing: -.04em; }
+    p { color: #9eb2ca; }
+    button { border: 0; border-radius: 10px; padding: 11px 15px; color: #07101f; background: linear-gradient(100deg, #73dcff, #a8a0ff); cursor: pointer; font-weight: 800; }
+    button.secondary { color: #c8edff; border: 1px solid #41678e; background: transparent; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .card, .panel { border: 1px solid rgba(113, 174, 255, .24); border-radius: 16px; background: rgba(12, 28, 51, .82); box-shadow: 0 16px 44px rgba(0,0,0,.2); }
+    .card { padding: 15px; }.card span { display: block; color: #8ea4bf; font-size: 12px; }.card strong { display: block; margin-top: 8px; font-size: 22px; }
+    .panel { overflow: hidden; }.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid rgba(113, 174, 255, .16); }.panel-head h2 { margin: 0; font-size: 18px; }
+    .table-wrap { overflow-x: auto; } table { width: 100%; border-collapse: collapse; min-width: 760px; } th, td { padding: 12px 16px; border-bottom: 1px solid rgba(113, 174, 255, .1); text-align: left; font-size: 13px; } th { color: #8ea4bf; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; } td strong { color: #e2f5ff; } td small { display: block; margin-top: 4px; color: #8198b2; }
+    .status { display: inline-flex; padding: 5px 8px; border-radius: 99px; color: #b9f4d2; background: rgba(20, 142, 91, .2); font-size: 11px; }.status.pending, .status.processing { color: #ffe1a8; background: rgba(145, 93, 20, .2); }.status.failed { color: #ffb8bd; background: rgba(180, 36, 60, .2); }
+    .message { min-height: 20px; margin: 15px 0; color: #b9f4d2; }.message.error { color: #ffb8bd; }
+    dialog { width: min(520px, calc(100% - 30px)); border: 1px solid #41678e; border-radius: 18px; color: #e9f2ff; background: #0c1c33; box-shadow: 0 25px 80px #000; } dialog::backdrop { background: rgba(0,0,0,.65); } dialog h2 { margin-top: 0; } label { display: block; margin: 14px 0 7px; color: #c7d6e8; font-size: 13px; font-weight: 700; } input { width: 100%; padding: 12px; border: 1px solid #2b4667; border-radius: 10px; outline: none; color: #fff; background: #08182c; } input:focus { border-color: #72d9ff; } .warning { padding: 11px; border-radius: 10px; color: #ffe1a8; background: rgba(145, 93, 20, .16); font-size: 12px; line-height: 1.45; } .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+    @media (max-width: 700px) { header { align-items: flex-start; flex-direction: column; }.cards { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div><h1>Funding Admin TPK</h1><p>Panel lokal untuk melihat wallet dan konfigurasi pendanaan Sepolia.</p></div><button id="configureButton">Konfigurasi Funding</button></header>
+    <section class="cards"><div class="card"><span>Total TPK</span><strong id="total">-</strong></div><div class="card"><span>Wallet terdaftar</span><strong id="wallets">-</strong></div><div class="card"><span>Funding aktif</span><strong id="enabled">-</strong></div><div class="card"><span>Treasury key</span><strong id="key">-</strong></div></section>
+    <p id="message" class="message"></p>
+    <section class="panel"><div class="panel-head"><h2>Daftar TPK dari Supabase</h2><button class="secondary" id="refreshButton">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>Nama</th><th>NIK</th><th>Wallet</th><th>Status funding</th><th>Transaksi terakhir</th></tr></thead><tbody id="members"><tr><td colspan="5">Memuat...</td></tr></tbody></table></div></section>
+  </main>
+  <dialog id="configDialog"><form method="dialog" id="configForm"><h2>Konfigurasi Funding</h2><p>Konfigurasi ini disimpan lokal, dikirim ke Vercel Production, lalu langsung redeploy backend.</p><div class="warning">Gunakan private key treasury Sepolia khusus. Jangan gunakan private key wallet TPK pengguna.</div><label for="privateKey">Private key treasury Sepolia</label><input id="privateKey" type="password" autocomplete="off" required><label for="amountEth">Jumlah ETH per wallet</label><input id="amountEth" value="0.1" inputmode="decimal" required><label for="rpcUrl">RPC URL Sepolia</label><input id="rpcUrl" value="https://ethereum-sepolia-rpc.publicnode.com" required><div class="dialog-actions"><button class="secondary" type="button" id="cancelButton">Batal</button><button type="submit" id="saveButton">Simpan + Redeploy</button></div></form></dialog>
+  <script>
+    const token = '__ADMIN_TOKEN__';
+    const headers = { 'x-admin-token': token };
+    const $ = (id) => document.getElementById(id);
+    const message = (text, error = false) => { $('message').textContent = text; $('message').className = error ? 'message error' : 'message'; };
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    const statusLabel = (status) => `<span class="status ${escapeHtml(status)}">${escapeHtml(status)}</span>`;
+    async function loadConfig() { const response = await fetch('/api/config', { headers }); const data = await response.json(); if (!response.ok) throw new Error(data.message); $('enabled').textContent = data.enabled ? 'Ya' : 'Tidak'; $('key').textContent = data.privateKeyConfigured ? 'Tersedia' : 'Belum ada'; $('amountEth').value = data.amountEth; $('rpcUrl').value = data.rpcUrl; }
+    async function loadMembers() { const response = await fetch('/api/members', { headers }); const data = await response.json(); if (!response.ok) throw new Error(data.message); const rows = data.members; $('total').textContent = rows.length; $('wallets').textContent = rows.filter((row) => row.walletAddress).length; $('members').innerHTML = rows.map((row) => `<tr><td><strong>${escapeHtml(row.name || '-')}</strong><small>${escapeHtml(row.idTpk || '')}</small></td><td>${escapeHtml(row.nik)}</td><td>${row.walletAddress ? `<strong>${escapeHtml(row.walletLabel)}</strong>` : '<small>Belum ada wallet</small>'}</td><td>${statusLabel(row.fundingStatus)}${row.fundingAttemptedAt ? `<small>${escapeHtml(new Date(row.fundingAttemptedAt).toLocaleString('id-ID'))}</small>` : ''}</td><td>${row.fundingTxHash ? `<small>${escapeHtml(row.fundingTxHash.slice(0, 16))}...</small>` : '<small>-</small>'}</td></tr>`).join(''); }
+    async function refresh() { try { message('Memuat data...'); await Promise.all([loadConfig(), loadMembers()]); message('Data berhasil diperbarui.'); } catch (error) { message(error.message || 'Data gagal dimuat.', true); } }
+    $('refreshButton').addEventListener('click', refresh); $('configureButton').addEventListener('click', () => $('configDialog').showModal()); $('cancelButton').addEventListener('click', () => $('configDialog').close());
+    $('configForm').addEventListener('submit', async (event) => { event.preventDefault(); $('saveButton').disabled = true; message('Menyimpan env, mengirim ke Vercel, dan redeploy...'); try { const response = await fetch('/api/configure', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ privateKey: $('privateKey').value, amountEth: $('amountEth').value, rpcUrl: $('rpcUrl').value, syncVercel: true }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); $('privateKey').value = ''; $('configDialog').close(); message(data.message); await refresh(); } catch (error) { message(error.message || 'Konfigurasi gagal.', true); } finally { $('saveButton').disabled = false; } });
+    refresh();
+  </script>
+</body>
+</html>

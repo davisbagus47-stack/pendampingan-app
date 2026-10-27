@@ -266,6 +266,15 @@ vercel link --project pendampingan-app-mvbo
 
 Gunakan wallet treasury Sepolia khusus. Jangan gunakan private key wallet TPK pengguna dan jangan commit file `backend/.env`. Tool otomatis mengecualikan `.env`, data lokal, dan file sementara dari deployment.
 
+Untuk melihat daftar nama TPK dari Supabase dan membuka tombol konfigurasi melalui panel lokal:
+
+```powershell
+cd backend
+npm run funding:admin
+```
+
+Buka URL localhost yang dicetak di terminal. URL tersebut memiliki token akses sementara dan hanya dapat diakses dari komputer lokal.
+
 ### Auto-deploy
 Setelah 2 project terhubung ke repo GitHub & env diatur, setiap `git push main` otomatis build & deploy. Rahasia **tidak pernah** di-commit ke GitHub — hanya di dashboard Vercel.
 

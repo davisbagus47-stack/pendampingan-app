@@ -3,6 +3,8 @@
 data/
 tools/_tmp*
 tools/_debug.js
+tools/funding-admin.*
+tools/setup-tpk-funding.ps1
 tools/__pycache__/
 node_modules/
 *.log

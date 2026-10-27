@@ -90,7 +90,9 @@ Push-Location $backendDir
 try {
   foreach ($entry in $values.GetEnumerator()) {
     Write-Host "Menambahkan $($entry.Key) ke Production..."
-    $entry.Value | & $vercel.Source env add $entry.Key production
+    $envArgs = @('env', 'add', $entry.Key, 'production', '--force')
+    if ($entry.Key -eq 'TPK_FUNDING_PRIVATE_KEY') { $envArgs += '--sensitive' }
+    $entry.Value | & $vercel.Source @envArgs
     if ($LASTEXITCODE -ne 0) {
       throw "Gagal menambahkan $($entry.Key). Jika variable sudah ada, perbarui dari dashboard Vercel atau hapus lalu jalankan ulang."
     }
