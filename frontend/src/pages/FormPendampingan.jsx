@@ -141,8 +141,10 @@ const Field = ({ label, required, children, full }) => (
   </div>
 );
 
-const FormPendampingan = () => {
-  const [formData, setFormData] = useState(FORM_AWAL);
+const shortAddress = (address = '') => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
+
+const FormPendampingan = ({ session, onLogout }) => {
+  const [formData, setFormData] = useState({ ...FORM_AWAL, namaTPK: session?.name || '' });
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
   const [successModal, setSuccessModal] = useState(null);
@@ -306,6 +308,14 @@ const FormPendampingan = () => {
               <h1>Formulir Pendampingan Keluarga</h1>
               <p>Tim Pendamping Keluarga (TPK) — Percepatan Penurunan Stunting</p>
             </div>
+          </div>
+          <div className="gov-session">
+            <div className="gov-session-copy">
+              <span>Login sebagai</span>
+              <strong>{session?.name || 'TPK'}</strong>
+              <small>{shortAddress(session?.address)} · Sepolia</small>
+            </div>
+            <button type="button" className="btn-logout" onClick={onLogout}>Keluar</button>
           </div>
         </div>
       </header>

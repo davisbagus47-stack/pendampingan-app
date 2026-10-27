@@ -1,8 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+jest.mock('axios', () => ({
+  get: jest.fn(() => Promise.resolve({ data: { data: [] } })),
+  post: jest.fn(),
+}));
+
+test('renders the separate login page', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /masuk dengan wallet/i })).toBeInTheDocument();
+  expect(window.location.hash).toBe('#/login');
 });

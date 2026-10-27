@@ -33,6 +33,10 @@ html, body {
   max-width: 900px;
   margin: 0 auto;
   padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
 
 .gov-brand {
@@ -68,6 +72,45 @@ html, body {
   margin: 4px 0 0;
   font-size: 13px;
   color: #b9c8d8;
+}
+
+.gov-session {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.gov-session-copy {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.gov-session-copy span,
+.gov-session-copy small {
+  color: #b9c8d8;
+  font-size: 11px;
+}
+
+.gov-session-copy strong {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.btn-logout {
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  color: #ffffff;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .gov-main {
@@ -375,6 +418,8 @@ html, body {
 
   .gov-header-inner {
     padding: 16px;
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .gov-brand h1 {
@@ -383,6 +428,15 @@ html, body {
 
   .gov-brand p {
     font-size: 12px;
+  }
+
+  .gov-session {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .gov-session-copy {
+    text-align: left;
   }
 
   .gov-main {
