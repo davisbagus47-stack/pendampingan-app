@@ -136,7 +136,7 @@ app.post('/api/configure', protect, async (req, res) => {
         const args = ['env', 'add', name, '--environment', 'production', '--force', '--sensitive'];
         await runVercel(args, value);
       }
-      await runVercel(['deploy', '--prod', '--yes']);
+      await runVercel(['deploy', '--cwd', '..', '--project', 'pendampingan-app-mvbo', '--prod', '--yes']);
     }
 
     return res.json({ success: true, message: 'Konfigurasi tersimpan dan Production berhasil di-redeploy.' });
