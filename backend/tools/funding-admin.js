@@ -8,6 +8,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const express = require('express');
 const db = require('../lib/db.js');
+const tpkFunding = require('../lib/tpk-funding.js');
 
 const app = express();
 const port = Number(process.env.FUNDING_ADMIN_PORT || 3030);
@@ -76,6 +77,51 @@ function validateConfig(body) {
   return { privateKey: privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`, amountEth, rpcUrl };
 }
 
+async function enrichFundingStatuses(rows) {
+  const enriched = new Array(rows.length);
+  const fundedNiks = [];
+  let cursor = 0;
+  const workerCount = Math.min(8, Math.max(1, rows.length));
+
+  async function worker() {
+    while (cursor < rows.length) {
+      const index = cursor;
+      cursor += 1;
+      const row = rows[index];
+      let fundingStatus = row.funding_status || 'belum_didanai';
+      let balanceWei = null;
+      if (row.wallet_address) {
+        try {
+          balanceWei = await tpkFunding.saldo(row.wallet_address);
+          if (balanceWei > 0n) {
+            fundingStatus = 'funded';
+            if (row.funding_status !== 'funded') fundedNiks.push(row.nik);
+          } else if (row.funding_status === 'funded') {
+            fundingStatus = 'saldo_habis';
+          }
+        } catch (error) {
+          console.error(`Gagal membaca saldo wallet TPK ${row.nik}:`, error.message);
+        }
+      }
+      enriched[index] = {
+        nik: maskNik(row.nik),
+        name: row.nama_lengkap,
+        idTpk: row.id_tpk,
+        walletAddress: row.wallet_address || null,
+        walletLabel: shortAddress(row.wallet_address),
+        fundingStatus,
+        fundingTxHash: row.funding_tx_hash || null,
+        fundingAmountWei: row.funding_amount_wei ? String(row.funding_amount_wei) : null,
+        fundingAttemptedAt: row.funding_attempted_at || null,
+        balanceWei: balanceWei === null ? null : balanceWei.toString(),
+      };
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return { enriched, fundedNiks };
+}
+
 app.get('/', (req, res) => {
   if (req.query.token !== token) return res.status(401).type('text').send('Buka URL panel yang tercetak di terminal.');
   const html = fs.readFileSync(pagePath, 'utf8').replace('__ADMIN_TOKEN__', token);
@@ -99,19 +145,19 @@ app.get('/api/members', protect, async (req, res) => {
          FROM tpk_members
         ORDER BY nama_lengkap NULLS LAST, nik`
     ));
+    const { enriched, fundedNiks } = await enrichFundingStatuses(result.rows);
+    if (fundedNiks.length) {
+      await db.transaksi({ role: 'operator' }, (client) => client.query(
+        `UPDATE tpk_members
+            SET funding_status = 'funded', funding_error = NULL
+          WHERE nik = ANY($1::text[])
+            AND wallet_address IS NOT NULL`,
+        [fundedNiks]
+      ));
+    }
     return res.json({
       success: true,
-      members: result.rows.map((row) => ({
-        nik: maskNik(row.nik),
-        name: row.nama_lengkap,
-        idTpk: row.id_tpk,
-        walletAddress: row.wallet_address || null,
-        walletLabel: shortAddress(row.wallet_address),
-        fundingStatus: row.funding_status || 'belum_didanai',
-        fundingTxHash: row.funding_tx_hash || null,
-        fundingAmountWei: row.funding_amount_wei ? String(row.funding_amount_wei) : null,
-        fundingAttemptedAt: row.funding_attempted_at || null,
-      })),
+      members: enriched,
     });
   } catch (error) {
     console.error('Panel funding gagal membaca daftar TPK:', error.message);

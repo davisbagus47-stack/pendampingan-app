@@ -1460,12 +1460,16 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
     const member = result.rows[0];
     let funding = { status: 'existing' };
     let refillEligible = false;
-    if (member.funding_status === 'submitted' && tpkFunding.konfigurasi().aktif) {
+    if (['submitted', 'funded'].includes(member.funding_status) && tpkFunding.konfigurasi().aktif) {
       try {
         const balanceWei = await tpkFunding.saldo(member.wallet_address);
         if (balanceWei === 0n) {
-          const receiptStatus = await tpkFunding.statusTransaksi(member.funding_tx_hash);
-          refillEligible = receiptStatus === 1;
+          if (member.funding_status === 'funded') {
+            refillEligible = true;
+          } else {
+            const receiptStatus = await tpkFunding.statusTransaksi(member.funding_tx_hash);
+            refillEligible = receiptStatus === 1;
+          }
         }
       } catch (balanceError) {
         console.error(`[${new Date().toISOString()}] Cek saldo wallet TPK gagal:`, balanceError.message);
@@ -1477,7 +1481,7 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
             SET funding_status = 'processing', funding_attempted_at = now(), funding_error = NULL
           WHERE nik = $1 AND lower(wallet_address) = lower($2)
             AND (funding_status IN ('pending', 'failed')
-              OR (funding_status = 'submitted' AND $3 = true)
+              OR (funding_status IN ('submitted', 'funded') AND $3 = true)
               OR (funding_status = 'processing' AND funding_attempted_at < now() - interval '15 minutes'))
         RETURNING nik`,
         [member.nik, member.wallet_address, refillEligible]
