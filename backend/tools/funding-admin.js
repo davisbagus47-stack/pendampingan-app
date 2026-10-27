@@ -67,6 +67,16 @@ function runVercel(args, input) {
   });
 }
 
+function openBrowser(url) {
+  if (!process.argv.includes('--open')) return;
+  if (process.platform === 'win32') {
+    spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  } else {
+    const command = process.platform === 'darwin' ? 'open' : 'xdg-open';
+    spawn(command, [url], { detached: true, stdio: 'ignore' }).unref();
+  }
+}
+
 function validateConfig(body) {
   const privateKey = String(body.privateKey || '').replace(/\s/g, '');
   const amountEth = String(body.amountEth || '0.1').trim();
@@ -193,6 +203,8 @@ app.post('/api/configure', protect, async (req, res) => {
 });
 
 app.listen(port, '127.0.0.1', () => {
-  console.log(`Panel funding lokal: http://127.0.0.1:${port}/?token=${token}`);
+  const panelUrl = `http://127.0.0.1:${port}/?token=${token}`;
+  console.log(`Panel funding lokal: ${panelUrl}`);
   console.log('Panel hanya mendengarkan localhost. Tekan Ctrl+C untuk menutup.');
+  openBrowser(panelUrl);
 });
