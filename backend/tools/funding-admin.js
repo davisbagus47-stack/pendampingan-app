@@ -133,8 +133,7 @@ app.post('/api/configure', protect, async (req, res) => {
 
     if (req.body.syncVercel !== false) {
       for (const [name, value] of Object.entries(values)) {
-        const args = ['env', 'add', name, 'production', '--force'];
-        if (name === 'TPK_FUNDING_PRIVATE_KEY') args.push('--sensitive');
+        const args = ['env', 'add', name, '--environment', 'production', '--force', '--sensitive'];
         await runVercel(args, value);
       }
       await runVercel(['deploy', '--prod', '--yes']);
