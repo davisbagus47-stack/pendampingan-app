@@ -1451,7 +1451,7 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
               funding_status = CASE WHEN wallet_address IS NULL THEN 'pending' ELSE funding_status END
         WHERE nik = $2
           AND (wallet_address IS NULL OR lower(wallet_address) = lower($1))
-      RETURNING nik, nama_lengkap, id_tpk, wallet_address, funding_status`,
+      RETURNING nik, nama_lengkap, id_tpk, wallet_address, funding_status, funding_tx_hash, funding_attempted_at`,
       [walletAddress, nik]
     ));
     if (result.rowCount === 0) {
@@ -1459,20 +1459,34 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
     }
     const member = result.rows[0];
     let funding = { status: 'existing' };
-    if (['pending', 'failed', 'processing'].includes(member.funding_status)) {
+    let refillEligible = false;
+    if (member.funding_status === 'submitted' && tpkFunding.konfigurasi().aktif) {
+      try {
+        const balanceWei = await tpkFunding.saldo(member.wallet_address);
+        if (balanceWei === 0n) {
+          const receiptStatus = await tpkFunding.statusTransaksi(member.funding_tx_hash);
+          refillEligible = receiptStatus === 1;
+        }
+      } catch (balanceError) {
+        console.error(`[${new Date().toISOString()}] Cek saldo wallet TPK gagal:`, balanceError.message);
+      }
+    }
+    if (['pending', 'failed', 'processing'].includes(member.funding_status) || refillEligible) {
       const claim = await db.transaksi({ role: 'operator' }, (client) => client.query(
         `UPDATE tpk_members
             SET funding_status = 'processing', funding_attempted_at = now(), funding_error = NULL
           WHERE nik = $1 AND lower(wallet_address) = lower($2)
             AND (funding_status IN ('pending', 'failed')
+              OR (funding_status = 'submitted' AND $3 = true)
               OR (funding_status = 'processing' AND funding_attempted_at < now() - interval '15 minutes'))
         RETURNING nik`,
-        [member.nik, member.wallet_address]
+        [member.nik, member.wallet_address, refillEligible]
       ));
       if (claim.rowCount === 0) {
-        funding = { status: 'processing', message: 'Pendanaan wallet sedang diproses.' };
+        funding = { status: 'processing', reason: refillEligible ? 'saldo_habis' : 'wallet_baru', message: 'Pendanaan wallet sedang diproses.' };
       } else {
         funding = await tpkFunding.antreKirim(member.wallet_address);
+        funding = { ...funding, reason: refillEligible ? 'saldo_habis' : 'wallet_baru' };
         await db.transaksi({ role: 'operator' }, (client) => client.query(
           `UPDATE tpk_members
               SET funding_status = $1,

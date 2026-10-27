@@ -144,6 +144,8 @@ const Field = ({ label, required, children, full }) => (
 const shortAddress = (address = '') => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 const fundingMessage = (funding) => {
   if (!funding || funding.status === 'existing') return '';
+  if (funding.reason === 'saldo_habis' && funding.status === 'submitted') return `${funding.amountEth || '0.1'} Sepolia ETH sedang mengisi ulang saldo wallet.`;
+  if (funding.reason === 'saldo_habis' && funding.status === 'processing') return 'Saldo wallet habis. Pengisian ulang Sepolia ETH sedang diproses.';
   if (funding.status === 'submitted') return `${funding.amountEth || '0.1'} Sepolia ETH sedang dikirim ke wallet.`;
   if (funding.status === 'processing') return 'Pendanaan Sepolia ETH sedang diproses.';
   if (funding.status === 'not_configured') return 'Wallet berhasil dibuat, tetapi pendanaan otomatis belum dikonfigurasi.';

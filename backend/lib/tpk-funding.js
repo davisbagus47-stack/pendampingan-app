@@ -64,6 +64,23 @@ async function kirim(walletAddress, env, deps) {
   }
 }
 
+async function saldo(walletAddress, env, deps) {
+  const k = konfigurasi(env);
+  if (!isAddress(walletAddress)) throw new Error('Alamat wallet penerima tidak valid.');
+  const d = deps || {};
+  const provider = d.provider || new JsonRpcProvider(k.rpcUrl, 11155111, { staticNetwork: true });
+  return provider.getBalance(getAddress(walletAddress));
+}
+
+async function statusTransaksi(txHash, env, deps) {
+  if (!txHash) return null;
+  const k = konfigurasi(env);
+  const d = deps || {};
+  const provider = d.provider || new JsonRpcProvider(k.rpcUrl, 11155111, { staticNetwork: true });
+  const receipt = await provider.getTransactionReceipt(txHash);
+  return receipt ? Number(receipt.status) : null;
+}
+
 /**
  * Serialisasi pengiriman dalam satu instance server agar nonce treasury tidak
  * bertabrakan ketika beberapa TPK membuat wallet hampir bersamaan.
@@ -77,4 +94,4 @@ function antreKirim(walletAddress, env, deps) {
   return pekerjaan;
 }
 
-module.exports = { konfigurasi, kirim, antreKirim };
+module.exports = { konfigurasi, kirim, antreKirim, saldo, statusTransaksi };
