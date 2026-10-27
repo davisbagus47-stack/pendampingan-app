@@ -22,7 +22,7 @@ function keystoreAddress(value) {
   }
 }
 
-export default function Web3Login({ onAuthenticated }) {
+export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
   const [keystore, setKeystore] = useState(() => localStorage.getItem(STORAGE_KEY));
   const [identity, setIdentity] = useState(() => {
     try { return JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null') || { nik: '' }; } catch { return { nik: '' }; }
@@ -36,6 +36,10 @@ export default function Web3Login({ onAuthenticated }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (initialNotice) setNotice(initialNotice);
+  }, [initialNotice]);
 
   useEffect(() => {
     if (!keystore) return;
