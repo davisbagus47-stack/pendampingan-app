@@ -5,7 +5,9 @@ import './Web3Login.css';
 const API_URL = (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/+$/, '');
 const STORAGE_KEY = 'pendampingan.web3.keystore.v1';
 const IDENTITY_KEY = 'pendampingan.web3.identity.v1';
-const RPC_URL = process.env.REACT_APP_SEPOLIA_RPC_URL || 'https://rpc.sepolia.org';
+const RPC_URL = process.env.REACT_APP_SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
+const FAUCET_URL = 'https://www.alchemy.com/faucets/ethereum-sepolia';
+const POW_FAUCET_URL = 'https://sepolia-faucet.pk910.de/';
 const provider = new JsonRpcProvider(RPC_URL, 11155111, { staticNetwork: true });
 
 function shortAddress(address) { return `${address.slice(0, 6)}…${address.slice(-4)}`; }
@@ -22,6 +24,7 @@ export default function Web3Login({ onAuthenticated }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!keystore) return;
@@ -43,7 +46,9 @@ export default function Web3Login({ onAuthenticated }) {
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.message || 'Identitas tidak ditemukan.');
-      setMember(data); localStorage.setItem(IDENTITY_KEY, JSON.stringify({ nik: identity.nik }));
+      setMember(data); setAddress(data.walletAddress || '');
+      if (data.walletAddress) refreshBalance(data.walletAddress);
+      localStorage.setItem(IDENTITY_KEY, JSON.stringify({ nik: identity.nik }));
       setNotice(`Identitas terverifikasi: ${data.name}. Wallet akan dikaitkan dengan NIK ini.`);
     } catch (e) { setMember(null); setError(e.message || 'Verifikasi identitas gagal.'); }
     finally { setBusy(false); }
@@ -87,6 +92,18 @@ export default function Web3Login({ onAuthenticated }) {
     finally { setBusy(false); }
   };
 
+  const copyAddress = async () => {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setNotice('Alamat wallet tersalin. Tempel alamat ini di faucet Sepolia.');
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError('Alamat wallet tidak dapat disalin otomatis. Salin alamat yang tampil secara manual.');
+    }
+  };
+
   return (
     <main className="web3-login"><section className="web3-card">
       <div className="web3-mark">✦</div><p className="web3-eyebrow">PENDAMPINGAN WEB3</p>
@@ -105,7 +122,8 @@ export default function Web3Login({ onAuthenticated }) {
       </form> : null}
       {error ? <p className="web3-error" role="alert">{error}</p> : null}{notice ? <p className="web3-notice">{notice}</p> : null}
       {address && member ? <div className="wallet-status"><div><span>Alamat</span><strong>{shortAddress(address)}</strong></div><div><span>Jaringan</span><strong>Sepolia testnet</strong></div><div><span>Saldo test ETH</span><strong>{balance} ETH</strong></div></div> : null}
-      <div className="web3-faucet"><span>Saldo Sepolia kosong?</span><a href="https://sepoliafaucet.com/" target="_blank" rel="noreferrer">Ambil test ETH dari faucet ↗</a></div>
+      {address && member ? <button className="web3-secondary web3-copy" type="button" onClick={copyAddress}>{copied ? 'Alamat tersalin ✓' : 'Salin alamat wallet'}</button> : null}
+      <div className="web3-faucet"><span>Saldo Sepolia kosong?</span><span className="web3-faucet-links"><a href={FAUCET_URL} target="_blank" rel="noreferrer">Faucet Alchemy ↗</a><a href={POW_FAUCET_URL} target="_blank" rel="noreferrer">Alternatif PoW ↗</a></span></div>
       <p className="web3-warning">Private key tidak dikirim ke server. Gunakan password dan backup wallet dengan aman.</p>
     </section></main>
   );

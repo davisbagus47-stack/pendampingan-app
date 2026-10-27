@@ -16,5 +16,6 @@
 .wallet-status div { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
 .wallet-status span { color: #8ea4bf; }.wallet-status strong { color: #dff6ff; }
 .web3-error, .web3-notice { margin: 14px 0 0; padding: 11px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4; }.web3-error { color: #ffb8bd; background: rgba(180, 36, 60, .2); }.web3-notice { color: #b9f4d2; background: rgba(20, 142, 91, .18); }
-.web3-faucet { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; color: #94a9c3; font-size: 12px; }.web3-faucet a { color: #79dcff; font-weight: 700; text-align: right; }.web3-warning { margin: 22px 0 0; color: #71859e; font-size: 11px; line-height: 1.5; text-align: center; }
-@media (max-width: 480px) { .web3-card { padding: 32px 22px 25px; border-radius: 20px; }.web3-card h1 { font-size: 28px; }.web3-faucet { flex-direction: column; }.web3-faucet a { text-align: left; } }
+.web3-copy { margin-top: 0; }
+.web3-faucet { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; color: #94a9c3; font-size: 12px; }.web3-faucet-links { display: grid; gap: 4px; text-align: right; }.web3-faucet a { color: #79dcff; font-weight: 700; }.web3-warning { margin: 22px 0 0; color: #71859e; font-size: 11px; line-height: 1.5; text-align: center; }
+@media (max-width: 480px) { .web3-card { padding: 32px 22px 25px; border-radius: 20px; }.web3-card h1 { font-size: 28px; }.web3-faucet { flex-direction: column; }.web3-faucet-links { text-align: left; }.web3-faucet a { text-align: left; } }
