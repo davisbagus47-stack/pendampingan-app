@@ -125,7 +125,7 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
       localStorage.setItem(STORAGE_KEY, encrypted); setKeystore(encrypted); setAddress(wallet.address); setPassword(''); setShowPassword(false);
       await waitForFundedWallet(wallet.address, linked.funding);
       setNotice('Wallet berhasil dibuat dan dikaitkan dengan data TPK.');
-      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
+      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: { ...linked.funding, status: 'funded' } });
     } catch (e) { setError(e.message || 'Wallet gagal dibuat.'); }
     finally { setBusy(false); }
   };
@@ -139,7 +139,7 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
       }
       const linked = await bindWallet(wallet.address);
       await waitForFundedWallet(wallet.address, linked.funding); setAddress(wallet.address); setPassword(''); setShowPassword(false);
-      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: linked.funding });
+      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: { ...linked.funding, status: 'funded' } });
     } catch (e) { setError(e.message || 'Password wallet salah atau wallet tidak cocok dengan identitas.'); }
     finally { setBusy(false); }
   };

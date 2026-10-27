@@ -146,7 +146,7 @@ const Field = ({ label, required, children, full }) => (
 
 const shortAddress = (address = '') => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 const fundingMessage = (funding) => {
-  if (!funding || funding.status === 'existing') return '';
+  if (!funding || funding.status === 'existing' || funding.status === 'funded') return '';
   if (funding.reason === 'saldo_habis' && funding.status === 'submitted') return `${funding.amountEth || '0.1'} Sepolia ETH sedang mengisi ulang saldo wallet.`;
   if (funding.reason === 'saldo_habis' && funding.status === 'processing') return 'Saldo wallet habis. Pengisian ulang Sepolia ETH sedang diproses.';
   if (funding.status === 'submitted') return `${funding.amountEth || '0.1'} Sepolia ETH sedang dikirim ke wallet.`;
