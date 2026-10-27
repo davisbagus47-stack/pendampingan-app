@@ -1,0 +1,8 @@
+.env
+.env.*
+data/
+tools/_tmp*
+tools/_debug.js
+tools/__pycache__/
+node_modules/
+*.log

@@ -99,4 +99,9 @@ try {
   Pop-Location
 }
 
-Write-Host 'Variable Vercel berhasil dikirim. Redeploy project backend agar aktif.' -ForegroundColor Green
+Write-Host 'Variable Vercel berhasil dikirim. Memulai redeploy Production backend...' -ForegroundColor Cyan
+& $vercel.Source deploy --prod --yes
+if ($LASTEXITCODE -ne 0) {
+  throw 'Variable sudah tersimpan di Vercel, tetapi redeploy Production gagal. Jalankan vercel deploy --prod --yes dari folder backend.'
+}
+Write-Host 'Variable aktif dan redeploy Production berhasil.' -ForegroundColor Green

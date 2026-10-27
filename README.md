@@ -255,7 +255,7 @@ cd backend
 .\tools\setup-tpk-funding.ps1
 ```
 
-Tool meminta private key treasury secara tersembunyi, memperbarui `.env` lokal, dan tidak menampilkan private key. Untuk mengirim variable yang sama ke Vercel, pasang serta login Vercel CLI, link project backend, lalu jalankan:
+Tool meminta private key treasury secara tersembunyi, memperbarui `.env` lokal, dan tidak menampilkan private key. Untuk mengirim variable yang sama ke Vercel sekaligus melakukan redeploy Production tanpa push GitHub, pasang serta login Vercel CLI, link project backend, lalu jalankan:
 
 ```powershell
 npm install --global vercel
@@ -264,7 +264,7 @@ vercel link --project pendampingan-app-mvbo
 .\tools\setup-tpk-funding.ps1 -SyncVercel
 ```
 
-Gunakan wallet treasury Sepolia khusus. Jangan gunakan private key wallet TPK pengguna dan jangan commit file `backend/.env`.
+Gunakan wallet treasury Sepolia khusus. Jangan gunakan private key wallet TPK pengguna dan jangan commit file `backend/.env`. Tool otomatis mengecualikan `.env`, data lokal, dan file sementara dari deployment.
 
 ### Auto-deploy
 Setelah 2 project terhubung ke repo GitHub & env diatur, setiap `git push main` otomatis build & deploy. Rahasia **tidak pernah** di-commit ke GitHub — hanya di dashboard Vercel.
