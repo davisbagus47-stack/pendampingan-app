@@ -452,6 +452,11 @@ function emit(catalog) {
   w(');');
   w('CREATE INDEX idx_tpk_members_nama ON tpk_members (nama_lengkap);');
   w('CREATE INDEX idx_tpk_members_desa ON tpk_members (desa_kelurahan);');
+  w('ALTER TABLE tpk_members ENABLE ROW LEVEL SECURITY;');
+  w('ALTER TABLE tpk_members FORCE ROW LEVEL SECURITY;');
+  w('CREATE POLICY tpk_members_operator_all ON tpk_members');
+  w('  FOR ALL USING (jwt_role() IN (\'operator\', \'admin\'))');
+  w('  WITH CHECK (jwt_role() IN (\'operator\', \'admin\'));');
   w();
 
   // --- records

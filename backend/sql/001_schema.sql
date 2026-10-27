@@ -195,6 +195,11 @@ CREATE TABLE tpk_members (
 );
 CREATE INDEX idx_tpk_members_nama ON tpk_members (nama_lengkap);
 CREATE INDEX idx_tpk_members_desa ON tpk_members (desa_kelurahan);
+ALTER TABLE tpk_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tpk_members FORCE ROW LEVEL SECURITY;
+CREATE POLICY tpk_members_operator_all ON tpk_members
+  FOR ALL USING (jwt_role() IN ('operator', 'admin'))
+  WITH CHECK (jwt_role() IN ('operator', 'admin'));
 
 -- ============================================================================
 -- RECORDS - system of record dengan versioning (ADR-1, ADR-4)
