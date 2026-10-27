@@ -188,6 +188,8 @@ CREATE TABLE tpk_members (
   operator_hp     TEXT,
   pendidikan      TEXT,
   desa_kelurahan  TEXT,
+  wallet_address  TEXT UNIQUE,
+  wallet_created_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );

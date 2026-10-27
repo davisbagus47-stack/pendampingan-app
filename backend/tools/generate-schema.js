@@ -445,6 +445,8 @@ function emit(catalog) {
   w('  operator_hp     TEXT,');
   w('  pendidikan      TEXT,');
   w('  desa_kelurahan  TEXT,');
+  w('  wallet_address  TEXT UNIQUE,');
+  w('  wallet_created_at TIMESTAMPTZ,');
   w('  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),');
   w('  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()');
   w(');');
