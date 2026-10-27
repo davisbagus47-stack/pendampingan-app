@@ -85,10 +85,16 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.message || 'Identitas tidak ditemukan.');
       setMember(data);
-      if (!keystore) setAddress(data.walletAddress || '');
-      if (data.walletAddress) refreshBalance(data.walletAddress);
+      if (data.walletAddress) {
+        setAddress(data.walletAddress);
+        refreshBalance(data.walletAddress);
+      } else {
+        setAddress('');
+        setBalance('0.0000');
+        if (keystore) setNotice(`Identitas terverifikasi: ${data.name}. NIK ini belum memiliki wallet, jadi wallet baru akan dibuat.`);
+      }
       localStorage.setItem(IDENTITY_KEY, JSON.stringify({ nik: identity.nik }));
-      setNotice(`Identitas terverifikasi: ${data.name}. Wallet akan dikaitkan dengan NIK ini.`);
+      if (data.walletAddress) setNotice(`Identitas terverifikasi: ${data.name}. Wallet akan dikaitkan dengan NIK ini.`);
     } catch (e) { setMember(null); setError(e.message || 'Verifikasi identitas gagal.'); }
     finally { setBusy(false); }
   };
@@ -180,7 +186,7 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
   };
 
   const walletAlreadyRegistered = Boolean(member?.walletAddress);
-  const walletMatchesIdentity = Boolean(keystore) && (!walletAlreadyRegistered || member.walletAddress.toLowerCase() === address.toLowerCase());
+  const walletMatchesIdentity = Boolean(keystore) && walletAlreadyRegistered && member.walletAddress.toLowerCase() === address.toLowerCase();
 
   return (
     <main className="web3-login"><section className="web3-card">
@@ -200,11 +206,11 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
         {member ? <div className="verified-name"><span>Nama terdaftar</span><strong>{member.name}</strong><small>NIK ditemukan di data TPK</small></div> : null}
       </div>
       {member ? <div className="wallet-status"><div><span>TPK</span><strong>{member.name}</strong></div><div><span>NIK</span><strong>{member.nik}</strong></div>{member.walletAddress ? <div><span>Wallet terdaftar</span><strong>{shortAddress(member.walletAddress)}</strong></div> : null}</div> : null}
-      {member && (walletMatchesIdentity || !walletAlreadyRegistered) ? <form onSubmit={keystore ? login : (e) => { e.preventDefault(); createWallet(); }}>
+      {member && (walletMatchesIdentity || !walletAlreadyRegistered) ? <form onSubmit={(e) => { e.preventDefault(); if (walletAlreadyRegistered) login(e); else createWallet(); }}>
         <label htmlFor="wallet-password">Password wallet</label>
-        <div className="password-field"><input id="wallet-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={keystore ? 'Masukkan password wallet' : 'Minimal 8 karakter'} autoComplete="new-password" required /><button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}>{showPassword ? 'Sembunyikan' : 'Tampilkan'}</button></div>
-        <button className="web3-primary" type="submit" disabled={busy}>{busy ? 'Memproses...' : keystore ? 'Buka wallet terdaftar' : 'Buat wallet sesuai identitas'}</button>
-        {keystore ? <p className="web3-forgot">Lupa password? Password tidak dapat di-reset. Wallet hanya bisa dibuka dengan password yang benar.</p> : null}
+        <div className="password-field"><input id="wallet-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={walletAlreadyRegistered ? 'Masukkan password wallet' : 'Minimal 8 karakter'} autoComplete="new-password" required /><button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}>{showPassword ? 'Sembunyikan' : 'Tampilkan'}</button></div>
+        <button className="web3-primary" type="submit" disabled={busy}>{busy ? 'Memproses...' : walletAlreadyRegistered ? 'Buka wallet terdaftar' : 'Buat wallet sesuai identitas'}</button>
+        {walletAlreadyRegistered && keystore ? <p className="web3-forgot">Lupa password? Password tidak dapat di-reset. Wallet hanya bisa dibuka dengan password yang benar.</p> : null}
       </form> : null}
       {member?.walletAddress && !walletMatchesIdentity ? <div className="web3-recovery">
         <strong>Wallet NIK ini sudah terdaftar</strong>
