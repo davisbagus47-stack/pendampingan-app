@@ -31,14 +31,6 @@ export default function Web3Login({ onAuthenticated }) {
     } catch { localStorage.removeItem(STORAGE_KEY); setKeystore(''); }
   }, [keystore]);
 
-  useEffect(() => {
-    if (identity.nik.length !== 16 || member || busy) return undefined;
-    const timer = setTimeout(() => { verifyIdentity(); }, 450);
-    return () => clearTimeout(timer);
-    // The lookup intentionally runs only when the NIK changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity.nik]);
-
   const refreshBalance = async (walletAddress) => {
     try { setBalance(Number(formatEther(await provider.getBalance(walletAddress))).toFixed(4)); } catch { setBalance('—'); }
   };
@@ -102,6 +94,7 @@ export default function Web3Login({ onAuthenticated }) {
       <div className="identity-grid">
         <label htmlFor="tpk-nik">NIK terdaftar</label>
         <input id="tpk-nik" inputMode="numeric" value={identity.nik} maxLength="16" onChange={(e) => { setMember(null); setIdentity({ nik: e.target.value.replace(/\D/g, '') }); setError(''); }} placeholder="Masukkan 16 digit NIK" disabled={Boolean(member)} />
+        <button className="web3-secondary" type="button" onClick={verifyIdentity} disabled={busy || Boolean(member) || identity.nik.length !== 16}>{busy ? 'Memverifikasi…' : member ? 'Identitas terverifikasi ✓' : 'Verifikasi NIK'}</button>
         {member ? <div className="verified-name"><span>Nama terdaftar</span><strong>{member.name}</strong><small>✓ NIK ditemukan di data TPK</small></div> : null}
       </div>
       {member ? <div className="wallet-status"><div><span>TPK</span><strong>{member.name}</strong></div><div><span>NIK</span><strong>{member.nik}</strong></div>{member.walletAddress ? <div><span>Wallet terdaftar</span><strong>{shortAddress(member.walletAddress)}</strong></div> : null}</div> : null}
