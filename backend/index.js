@@ -1404,18 +1404,17 @@ app.post('/api/auth/tpk/verify', async (req, res) => {
     return res.status(503).json({ success: false, message: 'Database belum tersedia.' });
   }
   const nik = normalizeNik(req.body && req.body.nik);
-  const nama = String((req.body && (req.body.nama || req.body.nama_lengkap)) || '').trim();
-  if (nik.length !== 16 || nama.length < 2) {
-    return res.status(400).json({ success: false, message: 'NIK 16 digit dan nama wajib diisi.' });
+  if (nik.length !== 16) {
+    return res.status(400).json({ success: false, message: 'NIK harus 16 digit.' });
   }
   try {
     const member = await db.transaksi({ role: 'operator' }, async (client) => {
       const result = await client.query(
         `SELECT nik, nama_lengkap, id_tpk, wallet_address
            FROM tpk_members
-          WHERE nik = $1 AND lower(trim(nama_lengkap)) = lower(trim($2))
+          WHERE nik = $1
           LIMIT 1`,
-        [nik, nama]
+        [nik]
       );
       return result.rows[0] || null;
     });
@@ -1437,19 +1436,18 @@ app.post('/api/auth/tpk/verify', async (req, res) => {
 app.post('/api/auth/tpk/wallet', async (req, res) => {
   if (!db.urlDatabase()) return res.status(503).json({ success: false, message: 'Database belum tersedia.' });
   const nik = normalizeNik(req.body && req.body.nik);
-  const nama = String((req.body && (req.body.nama || req.body.nama_lengkap)) || '').trim();
   const walletAddress = String((req.body && req.body.walletAddress) || '').trim();
-  if (nik.length !== 16 || nama.length < 2 || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+  if (nik.length !== 16 || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
     return res.status(400).json({ success: false, message: 'Identitas atau alamat wallet tidak valid.' });
   }
   try {
     const result = await db.transaksi({ role: 'operator' }, async (client) => client.query(
       `UPDATE tpk_members
           SET wallet_address = COALESCE(wallet_address, $1), wallet_created_at = COALESCE(wallet_created_at, now())
-        WHERE nik = $2 AND lower(trim(nama_lengkap)) = lower(trim($3))
+        WHERE nik = $2
           AND (wallet_address IS NULL OR lower(wallet_address) = lower($1))
       RETURNING nik, nama_lengkap, id_tpk, wallet_address`,
-      [walletAddress, nik, nama]
+      [walletAddress, nik]
     ));
     if (result.rowCount === 0) {
       return res.status(409).json({ success: false, message: 'Wallet TPK sudah terdaftar atau identitas tidak cocok.' });

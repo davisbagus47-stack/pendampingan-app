@@ -8,6 +8,7 @@
 .web3-card input { width: 100%; box-sizing: border-box; padding: 14px 15px; border: 1px solid #2b4667; border-radius: 12px; outline: none; color: #fff; background: #08182c; font-size: 15px; }
 .web3-card input:focus { border-color: #72d9ff; box-shadow: 0 0 0 3px rgba(114, 217, 255, .12); }
 .identity-grid { display: grid; gap: 8px; margin-bottom: 22px; }.identity-grid label:not(:first-child) { margin-top: 5px; }.identity-grid input:disabled { color: #a9bad2; background: #10243d; }
+.verified-name { display: grid; gap: 3px; margin-top: 5px; padding: 13px 14px; border: 1px solid rgba(86, 219, 157, .35); border-radius: 12px; background: rgba(20, 142, 91, .13); }.verified-name span, .verified-name small { color: #9ed9bd; font-size: 12px; }.verified-name strong { color: #e2fff0; font-size: 17px; }
 .web3-primary { width: 100%; margin-top: 14px; padding: 14px; border: 0; border-radius: 12px; color: #07101f; background: linear-gradient(100deg, #73dcff, #a8a0ff); cursor: pointer; font-weight: 800; }
 .web3-secondary { width: 100%; margin-top: 8px; padding: 12px; border: 1px solid #41678e; border-radius: 12px; color: #c8edff; background: transparent; cursor: pointer; font-weight: 700; }.web3-secondary:disabled { opacity: .75; cursor: default; }
 .web3-primary:disabled { opacity: .65; cursor: wait; }

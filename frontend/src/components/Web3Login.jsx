@@ -13,7 +13,7 @@ function shortAddress(address) { return `${address.slice(0, 6)}…${address.slic
 export default function Web3Login({ onAuthenticated }) {
   const [keystore, setKeystore] = useState(() => localStorage.getItem(STORAGE_KEY));
   const [identity, setIdentity] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null') || { nik: '', nama: '' }; } catch { return { nik: '', nama: '' }; }
+    try { return JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null') || { nik: '' }; } catch { return { nik: '' }; }
   });
   const [member, setMember] = useState(null);
   const [address, setAddress] = useState('');
@@ -31,6 +31,14 @@ export default function Web3Login({ onAuthenticated }) {
     } catch { localStorage.removeItem(STORAGE_KEY); setKeystore(''); }
   }, [keystore]);
 
+  useEffect(() => {
+    if (identity.nik.length !== 16 || member || busy) return undefined;
+    const timer = setTimeout(() => { verifyIdentity(); }, 450);
+    return () => clearTimeout(timer);
+    // The lookup intentionally runs only when the NIK changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity.nik]);
+
   const refreshBalance = async (walletAddress) => {
     try { setBalance(Number(formatEther(await provider.getBalance(walletAddress))).toFixed(4)); } catch { setBalance('—'); }
   };
@@ -39,11 +47,11 @@ export default function Web3Login({ onAuthenticated }) {
     setError(''); setNotice(''); setBusy(true);
     try {
       const response = await fetch(`${API_URL}/api/auth/tpk/verify`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(identity),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nik: identity.nik }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.message || 'Identitas tidak ditemukan.');
-      setMember(data); localStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
+      setMember(data); localStorage.setItem(IDENTITY_KEY, JSON.stringify({ nik: identity.nik }));
       setNotice(`Identitas terverifikasi: ${data.name}. Wallet akan dikaitkan dengan NIK ini.`);
     } catch (e) { setMember(null); setError(e.message || 'Verifikasi identitas gagal.'); }
     finally { setBusy(false); }
@@ -52,7 +60,7 @@ export default function Web3Login({ onAuthenticated }) {
   const bindWallet = async (walletAddress) => {
     const response = await fetch(`${API_URL}/api/auth/tpk/wallet`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...identity, walletAddress }),
+      body: JSON.stringify({ nik: identity.nik, walletAddress }),
     });
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.message || 'Wallet gagal dikaitkan.');
@@ -93,10 +101,8 @@ export default function Web3Login({ onAuthenticated }) {
       <p className="web3-subtitle">Verifikasi data TPK, lalu buat wallet Sepolia yang terikat pada identitas terdaftar.</p>
       <div className="identity-grid">
         <label htmlFor="tpk-nik">NIK terdaftar</label>
-        <input id="tpk-nik" inputMode="numeric" value={identity.nik} maxLength="16" onChange={(e) => setIdentity({ ...identity, nik: e.target.value.replace(/\D/g, '') })} placeholder="16 digit NIK" disabled={Boolean(member)} />
-        <label htmlFor="tpk-name">Nama lengkap terdaftar</label>
-        <input id="tpk-name" value={identity.nama} onChange={(e) => setIdentity({ ...identity, nama: e.target.value })} placeholder="Sesuai data SK TPK" disabled={Boolean(member)} />
-        <button className="web3-secondary" type="button" onClick={verifyIdentity} disabled={busy || Boolean(member)}>{member ? 'Identitas terverifikasi ✓' : 'Verifikasi NIK & nama'}</button>
+        <input id="tpk-nik" inputMode="numeric" value={identity.nik} maxLength="16" onChange={(e) => { setMember(null); setIdentity({ nik: e.target.value.replace(/\D/g, '') }); setError(''); }} placeholder="Masukkan 16 digit NIK" disabled={Boolean(member)} />
+        {member ? <div className="verified-name"><span>Nama terdaftar</span><strong>{member.name}</strong><small>✓ NIK ditemukan di data TPK</small></div> : null}
       </div>
       {member ? <div className="wallet-status"><div><span>TPK</span><strong>{member.name}</strong></div><div><span>NIK</span><strong>{member.nik}</strong></div>{member.walletAddress ? <div><span>Wallet terdaftar</span><strong>{shortAddress(member.walletAddress)}</strong></div> : null}</div> : null}
       {member ? <form onSubmit={keystore ? login : (e) => { e.preventDefault(); createWallet(); }}>
