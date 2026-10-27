@@ -156,6 +156,8 @@ function kunciKuota(identitas) {
 const JALUR_PUBLIK = new Set([
   'GET /api/sasaran',
   'POST /api/submit',
+  'POST /api/auth/tpk/verify',
+  'POST /api/auth/tpk/wallet',
   // Cron serverless (Vercel Cron) tidak membawa kunci API instansi; ia
   // mengautentikasi dirinya sendiri lewat CRON_SECRET di handler. Karena itu ia
   // harus melewati gerbang kunci API di sini -- kalau tidak, ia selalu 401.
@@ -1418,7 +1420,7 @@ app.post('/api/auth/tpk/verify', async (req, res) => {
       );
       return result.rows[0] || null;
     });
-    if (!member) return res.status(401).json({ success: false, message: 'NIK dan nama tidak cocok dengan data TPK.' });
+    if (!member) return res.status(401).json({ success: false, message: 'NIK tidak ditemukan di data TPK.' });
     return res.json({
       success: true,
       registered: true,
