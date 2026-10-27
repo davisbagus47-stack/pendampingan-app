@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { JsonRpcProvider, Wallet, formatEther } from 'ethers';
 import './Web3Login.css';
 
-const API_URL = (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/+$/, '');
+const DEFAULT_API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:3001'
+  : 'https://pendampingan-app-mvbo.vercel.app';
+const API_URL = (process.env.REACT_APP_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
 const STORAGE_KEY = 'pendampingan.web3.keystore.v1';
 const IDENTITY_KEY = 'pendampingan.web3.identity.v1';
 const RPC_URL = process.env.REACT_APP_SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';

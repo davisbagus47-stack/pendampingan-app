@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './FormPendampingan.css';
 
-const API_URL = (process.env.REACT_APP_API_URL || window.location.origin).replace(/\/+$/, '');
+const DEFAULT_API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:3001'
+  : 'https://pendampingan-app-mvbo.vercel.app';
+const API_URL = (process.env.REACT_APP_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
 
 const JENIS_SASARAN_OPTIONS = [
   { value: 'Catin', label: 'Calon Pengantin / Calon PUS' },
