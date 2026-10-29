@@ -403,7 +403,7 @@ const FormPendampingan = ({ session, onLogout }) => {
                 {walletPasswordStatus ? <small role="status">{walletPasswordStatus}</small> : null}
               </form>
             </details>
-            <button type="button" className="btn-logout" onClick={onLogout}>Keluar</button>
+            <button type="button" className="btn-logout" onClick={() => onLogout()}>Keluar</button>
           </div>
         </div>
       </header>
