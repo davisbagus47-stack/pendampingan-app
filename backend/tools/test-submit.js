@@ -5,14 +5,14 @@
  * titik injeksi, jadi satu-satunya cara mengujinya adalah memanggil Google
  * Sheets sungguhan. `setSheets` baru ditambahkan untuk ini.
  *
- * Yang diperiksa bukan cara menulis ke Sheets (itu urusan Sheets), tapi jalur
- * yang SULIT terlihat: metadata yang hanya diketahui route ini masuk log,
- * apa yang terjadi pada input yang tidak valid, dan apakah galat jaringan
- * menghasilkan entri `error` yang benar bukan `success`.
+ * Yang diperiksa adalah verifikasi tanda tangan dan identitas kader sebelum
+ * submit, serta pencatatan hasil yang sesuai di access_log.
  */
 
 const http = require('http');
+const { Wallet } = require('ethers');
 const app = require('../index.js');
+const tpkIdentity = require('../lib/tpk-identity.js');
 
 let lulus = 0;
 let gagal = 0;
@@ -39,8 +39,20 @@ const settle = () => new Promise((r) => setTimeout(r, 15));
 const server = http.createServer(app);
 let port = 0;
 
-function minta(path, o) {
-  const data = o.body === undefined ? null : JSON.stringify(o.body);
+const walletUji = Wallet.createRandom();
+
+async function minta(path, o) {
+  let requestBody = o.body;
+  if (path === '/api/submit' && o.sign !== false && requestBody !== undefined) {
+    const signedPayload = o.signPayload || requestBody;
+    const signature = await walletUji.signMessage(tpkIdentity.pesanPengiriman(walletUji.address, signedPayload));
+    requestBody = {
+      ...requestBody,
+      writerWalletAddress: walletUji.address,
+      writerSignature: signature,
+    };
+  }
+  const data = requestBody === undefined ? null : JSON.stringify(requestBody);
   return new Promise((resolve, reject) => {
     const req = http.request({
       host: '127.0.0.1',
@@ -98,6 +110,7 @@ const PAYLOAD = {
 };
 
 let tertangkap = [];
+let writerIdentitySeen = null;
 const loggerUji = require('../lib/access-log.js').buatLogger({
   sink: (entri) => { tertangkap.push(entri); },
 });
@@ -116,7 +129,15 @@ app.setCariKunci(null);
 // TANPA database (Sheets palsu), jadi titik suntiknya dimatikan supaya
 // DATABASE_URL yang kebetulan ada di .env tidak membuat uji menulis record
 // sungguhan.
-app.setCatatFormAudit(null);
+app.setCatatFormAudit(async (_body, writer) => {
+  writerIdentitySeen = writer;
+  return { status: 'skipped', reason: 'TEST' };
+});
+app.setCariAnggotaTpk(async (address) => (
+  address.toLowerCase() === walletUji.address.toLowerCase()
+    ? { nik: '3201234567890001', nama_lengkap: 'Kader Uji', wallet_address: walletUji.address }
+    : null
+));
 
 async function main() {
   const sheets = sheetsPalsu();
@@ -133,8 +154,14 @@ async function main() {
   await settle();
   eq('respons 200', r.status, 200);
   eq('json sukses', JSON.parse(r.body).success, true);
-  ok('append dipanggil tepat satu kali', sheets._catatan.append === 1,
-    'dapat ' + sheets._catatan.append);
+  eq('submit tidak memanggil Sheets langsung (flush dilakukan worker)', sheets._catatan.append, 0);
+  eq('writer berasal dari pemetaan wallet TPK',
+    writerIdentitySeen,
+    {
+      nik: '3201234567890001',
+      name: 'Kader Uji',
+      walletAddress: walletUji.address,
+    });
 
   const e1 = terakhir();
   ok('entri tercatat', !!e1 && typeof e1.result === 'string');
@@ -146,6 +173,7 @@ async function main() {
   eq('category diambil dari jenisSasaran mentah', e1.category, 'Catin');
   eq('response_rows = 1 untuk satu baris tertulis', e1.response_rows, 1);
   eq('endpoint', e1.endpoint, '/api/submit');
+  ok('signature tidak masuk access_log', JSON.stringify(e1).indexOf('writerSignature') < 0);
 
   // =========================================================================
   // Yang paling penting: SUBMIT tidak pernah boleh mencatat `denied_*`.
@@ -174,7 +202,7 @@ async function main() {
   // itu sendiri, tapi bahwa pencatatan mengikuti hasil yang SEBENARNYA.
   const e2 = terakhir();
   eq('tercatat sebagai error, bukan success', e2.result, 'error');
-  eq('tidak ada baris yang ditulis', sheets._catatan.append, 1);
+  eq('input tidak valid tidak memanggil Sheets', sheets._catatan.append, 0);
   eq('tidak ada yang menyimpan catatan galat palsu', e2.response_rows, 0);
 
   // `fields_invalid` harus tercatat: tanpa itu, dari log tidak bisa dibedakan
@@ -190,36 +218,38 @@ async function main() {
   eq('body kosong tercatat error', e3.result, 'error');
   ok('setiap field yang gagal terhitung', e3.params.fields_invalid >= 6,
     'dapat ' + e3.params.fields_invalid);
-  eq('tabel tidak disentuh', sheets._catatan.append, 1);
+  eq('body kosong tidak memanggil Sheets', sheets._catatan.append, 0);
 
   // -------------------------------------------------------------------------
-  console.log('=== 3. Galat jaringan: error, bukan sukses ===');
+  console.log('=== 3. Tanda tangan harus cocok dengan payload ===');
 
-  // Ini yang paling mudah salah: respons 500 bisa saja tercatat `success`
-  // kalau result di-set sebelum melempar. Dari log, kegagalan Google akan
-  // terlihat seperti penyimpanan sukses.
-  sheets._gagalAppend(true);
   tertangkap = [];
-  r = await minta('/api/submit', { method: 'POST', body: PAYLOAD });
+  r = await minta('/api/submit', { method: 'POST', body: PAYLOAD, sign: false });
   await settle();
-  eq('galat jaringan = 500', r.status, 500);
+  eq('tanpa signature = 401', r.status, 401);
   const e4 = terakhir();
-  eq('tercatat error', e4.result, 'error');
-  eq('kode INTERNAL_ERROR', e4.params && e4.params.code !== undefined ? e4.params.code : 'INTERNAL_ERROR',
-    'INTERNAL_ERROR');
-  eq('tidak ada baris yang tertulis', sheets._catatan.append, 1);
-  sheets._gagalAppend(false);
+  eq('penolakan signature tercatat denied_auth', e4.result, 'denied_auth');
+  eq('tidak ada Sheets yang dipanggil', sheets._catatan.append, 0);
+
+  r = await minta('/api/submit', {
+    method: 'POST',
+    body: Object.assign({}, PAYLOAD, { namaTPK: 'Nama dipalsukan setelah tanda tangan' }),
+    signPayload: PAYLOAD,
+  });
+  eq('payload yang berubah setelah ditandatangani ditolak', r.status, 401);
 
   // -------------------------------------------------------------------------
-  console.log('=== 4. Tidak ada kebocoran pesan galat ke klien ===');
+  console.log('=== 4. Wallet tidak terdaftar ditolak ===');
 
+  app.setCariAnggotaTpk(async () => null);
   r = await minta('/api/submit', { method: 'POST', body: PAYLOAD });
   await settle();
-  ok('pesan 500 disaring, tidak membocorkan detail internal',
-    r.body.indexOf('Pokus') < 0 && r.body.indexOf('stack') < 0);
-  ok('respons 500 tetap menyebut Google Sheets sebagai penyebab luar',
-    r.body.indexOf('Google Sheets') > 0);
-  eq('append berhasil sekali lagi setelah dinyalakan', sheets._catatan.append, 2);
+  eq('wallet tanpa pemetaan TPK = 401', r.status, 401);
+  app.setCariAnggotaTpk(async (address) => (
+    address.toLowerCase() === walletUji.address.toLowerCase()
+      ? { nik: '3201234567890001', nama_lengkap: 'Kader Uji', wallet_address: walletUji.address }
+      : null
+  ));
 
   // -------------------------------------------------------------------------
   console.log('=== 5. Rate limit tidak membajak submit ===');
@@ -234,7 +264,7 @@ async function main() {
   }
   await settle();
   eq('lima submit berturut-turut semua 200', suksesBerturut, 5);
-  eq('lima baris tercatat', sheets._catatan.append, 7);
+  eq('tidak ada pemanggilan Sheets langsung', sheets._catatan.append, 0);
   const e5 = terakhir();
   eq('entri terakhir sukses', e5.result, 'success');
 

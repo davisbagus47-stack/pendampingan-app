@@ -76,13 +76,14 @@ const KODE = Object.freeze({
  * Kolom metadata yang ditulis tangan, di luar kolom hasil turunan FIELD_ORDER.
  *
  * Urutannya harus cocok dengan urutan `nilai` yang dibangun `kolomDanNilai`.
- * `created_by` ikut ditulis eksplisit supaya provenance penulis terlihat
- * (`agency:<id>`), bukan jatuh ke default `operator` yang akan menyamarkan
- * jalur tulis instansi sebagai tulisan operator.
+ * `created_by` ikut ditulis eksplisit supaya provenance jalur tulis terlihat
+ * (`agency:<id>` atau `form-publik`). Kolom writer_* menyimpan identitas
+ * anggota TPK yang terverifikasi untuk submit form.
  */
 const KOLOM_METADATA = Object.freeze([
   'record_id', 'version', 'supersedes_id', 'status', 'schema_version',
   'institution_id', 'record_hash', 'payload_json', 'sections', 'created_by',
+  'writer_nik', 'writer_name', 'writer_wallet_address',
 ]);
 
 /** Buat galat ber-kode yang bisa diteruskan `kirimGalat`. */
@@ -249,7 +250,8 @@ function nilaiProyeksi(record, fieldOrder) {
  *
  * @returns {{columns:string[], values:Array<unknown>}}
  */
-function kolomDanNilai(record, fieldOrder, createdBy) {
+function kolomDanNilai(record, fieldOrder, createdBy, writer) {
+  const identity = writer || {};
   const columns = KOLOM_METADATA.concat(fieldOrder.map((f) => columnName(f)));
   const values = [
     record.record_id,
@@ -262,6 +264,9 @@ function kolomDanNilai(record, fieldOrder, createdBy) {
     JSON.stringify(record.payload_json),
     record.sections,
     createdBy,
+    identity.nik || null,
+    identity.name || null,
+    identity.walletAddress || null,
   ].concat(nilaiProyeksi(record, fieldOrder));
   return { columns, values };
 }

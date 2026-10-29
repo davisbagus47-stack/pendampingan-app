@@ -292,7 +292,8 @@ async function main() {
   await settle();
   const rem1 = Number(r1.headers['ratelimit-remaining']);
   const rem2 = Number(r2.headers['ratelimit-remaining']);
-  eq('jalur publik bukan 429', r1.status, 200);
+  ok('jalur publik tetap mencapai route (bukan 429)', r1.status !== 429);
+  ok('jalur publik mengirim header kuota', r1.headers['ratelimit-limit'] !== undefined);
   ok('sisa kuota berkurang pada permintaan kedua', rem2 < rem1);
   ok('sisa kuota dihitung dari agency_id, bukan token',
     app.kunciKuota({ agencyId: 42, terverifikasi: true }) === 'id-42');
@@ -343,15 +344,15 @@ async function main() {
   tertangkap = [];
   r = await minta('/api/sasaran', {});
   await settle();
-  eq('GET /api/sasaran terbuka tanpa kunci', r.status, 200);
+  ok('GET /api/sasaran tidak ditolak middleware API key', r.status !== 401);
 
   // Kecualian tidak boleh merembet: route lain di /api tetap tertutup.
   r = await minta('/api/audit/status', {});
   await settle();
   eq('GET /api/audit/status tetap 401 tanpa kunci', r.status, 401);
 
-  // POST /api/submit juga publik. Yang diuji bukan cara menulis ke Sheets
-  // (urusan test-submit.js), melainkan bahwa jalurnya tidak ditolak middleware.
+  // POST /api/submit bebas dari kunci API instansi, tetapi kini mensyaratkan
+  // tanda tangan wallet kader yang diverifikasi oleh route.
   app.setSheets(() => ({
     spreadsheets: {
       values: {
@@ -367,12 +368,12 @@ async function main() {
     namaTPK: 'TPK Uji', peranTPK: 'Kader', namaDesa: 'Desa Uji',
     jenisSasaran: 'Catin', tanggalKunjungan: '31 Des 2024',
   };
-  // Jalur form sukses menyentuh per-input audit (records+outbox). Uji ini tidak
-  // bermaksud menulis database, jadi titik suntiknya dimatikan.
+  // Tanpa wallet/signature, form harus ditolak sebelum Sheets maupun DB disentuh.
   app.setCatatFormAudit(null);
   r = await mintaPost('/api/submit', payloadPublik);
   await settle();
-  eq('POST /api/submit terbuka tanpa kunci', r.status, 200);
+  eq('POST /api/submit lolos middleware API key lalu meminta tanda tangan TPK',
+    JSON.parse(r.body).code, 'TPK_SIGNATURE_INVALID');
   app.setSheets(null);
 
   console.log('\nlulus: ' + lulus + '  gagal: ' + gagal);

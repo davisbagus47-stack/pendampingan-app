@@ -166,6 +166,15 @@ function main() {
   eq('jumlah nilai cocok kolom', values.length, columns.length);
   eq('kolom metadata urut', columns.slice(0, w.KOLOM_METADATA.length), w.KOLOM_METADATA.slice());
   eq('created_by diteruskan', values[w.KOLOM_METADATA.indexOf('created_by')], 'agency:7');
+  eq('identitas writer kosong untuk jalur agency', values[w.KOLOM_METADATA.indexOf('writer_nik')], null);
+  const withWriter = w.kolomDanNilai(rec, FIELD_ORDER, 'form-publik', {
+    nik: '3201234567890001',
+    name: 'Siti Aminah',
+    walletAddress: '0x1111111111111111111111111111111111111111',
+  });
+  eq('NIK writer disimpan', withWriter.values[w.KOLOM_METADATA.indexOf('writer_nik')], '3201234567890001');
+  eq('nama writer disimpan', withWriter.values[w.KOLOM_METADATA.indexOf('writer_name')], 'Siti Aminah');
+  eq('wallet writer disimpan', withWriter.values[w.KOLOM_METADATA.indexOf('writer_wallet_address')], '0x1111111111111111111111111111111111111111');
   ok('payload_json dikirim sebagai teks JSON',
     typeof values[w.KOLOM_METADATA.indexOf('payload_json')] === 'string');
   eq('sections dikirim sebagai array', Array.isArray(values[w.KOLOM_METADATA.indexOf('sections')]), true);

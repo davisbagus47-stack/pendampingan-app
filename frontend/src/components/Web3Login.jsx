@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { JsonRpcProvider, Wallet, formatEther } from 'ethers';
+import { JsonRpcProvider, Wallet, formatEther, keccak256, toUtf8Bytes } from 'ethers';
 import './Web3Login.css';
 
 const DEFAULT_API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -14,6 +14,33 @@ const POW_FAUCET_URL = 'https://sepolia-faucet.pk910.de/';
 const provider = new JsonRpcProvider(RPC_URL, 11155111, { staticNetwork: true });
 
 function shortAddress(address) { return `${address.slice(0, 6)}...${address.slice(-4)}`; }
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function walletBindingMessage(nik, walletAddress) {
+  return [
+    'Pendampingan TPK wallet binding v1',
+    'Chain: Sepolia (11155111)',
+    `NIK: ${nik}`,
+    `Wallet: ${walletAddress.toLowerCase()}`,
+  ].join('\n');
+}
+
+function submissionMessage(walletAddress, payload) {
+  const payloadHash = keccak256(toUtf8Bytes(stableJson(payload)));
+  return [
+    'Pendampingan TPK submission v1',
+    'Chain: Sepolia (11155111)',
+    `Wallet: ${walletAddress.toLowerCase()}`,
+    `Payload: ${payloadHash}`,
+  ].join('\n');
+}
 
 function keystoreAddress(value) {
   try {
@@ -99,10 +126,12 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
     finally { setBusy(false); }
   };
 
-  const bindWallet = async (walletAddress) => {
+  const bindWallet = async (wallet) => {
+    const walletAddress = wallet.address;
+    const signature = await wallet.signMessage(walletBindingMessage(identity.nik, walletAddress));
     const response = await fetch(`${API_URL}/api/auth/tpk/wallet`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nik: identity.nik, walletAddress }),
+      body: JSON.stringify({ nik: identity.nik, walletAddress, signature }),
     });
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.message || 'Wallet gagal dikaitkan.');
@@ -120,12 +149,24 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
     setBusy(true);
     try {
       const wallet = Wallet.createRandom();
-      const linked = await bindWallet(wallet.address);
+      const linked = await bindWallet(wallet);
       const encrypted = await wallet.encrypt(password);
       localStorage.setItem(STORAGE_KEY, encrypted); setKeystore(encrypted); setAddress(wallet.address); setPassword(''); setShowPassword(false);
       await waitForFundedWallet(wallet.address, linked.funding);
       setNotice('Wallet berhasil dibuat dan dikaitkan dengan data TPK.');
-      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: { ...linked.funding, status: 'funded' } });
+      onAuthenticated({
+        address: wallet.address,
+        name: linked.name,
+        nik: linked.nik,
+        network: 'Sepolia',
+        funding: { ...linked.funding, status: 'funded' },
+        signSubmission: (payload) => wallet.signMessage(submissionMessage(wallet.address, payload)),
+        updateWalletPassword: async (newPassword) => {
+          const encrypted = await wallet.encrypt(newPassword);
+          localStorage.setItem(STORAGE_KEY, encrypted);
+          return encrypted;
+        },
+      });
     } catch (e) { setError(e.message || 'Wallet gagal dibuat.'); }
     finally { setBusy(false); }
   };
@@ -137,9 +178,21 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
       if (member?.walletAddress && wallet.address.toLowerCase() !== member.walletAddress.toLowerCase()) {
         throw new Error('Backup wallet tidak cocok dengan wallet yang terdaftar untuk NIK ini.');
       }
-      const linked = await bindWallet(wallet.address);
+      const linked = await bindWallet(wallet);
       await waitForFundedWallet(wallet.address, linked.funding); setAddress(wallet.address); setPassword(''); setShowPassword(false);
-      onAuthenticated({ address: wallet.address, name: linked.name, nik: linked.nik, idTpk: linked.idTpk, network: 'Sepolia', funding: { ...linked.funding, status: 'funded' } });
+      onAuthenticated({
+        address: wallet.address,
+        name: linked.name,
+        nik: linked.nik,
+        network: 'Sepolia',
+        funding: { ...linked.funding, status: 'funded' },
+        signSubmission: (payload) => wallet.signMessage(submissionMessage(wallet.address, payload)),
+        updateWalletPassword: async (newPassword) => {
+          const encrypted = await wallet.encrypt(newPassword);
+          localStorage.setItem(STORAGE_KEY, encrypted);
+          return encrypted;
+        },
+      });
     } catch (e) { setError(e.message || 'Password wallet salah atau wallet tidak cocok dengan identitas.'); }
     finally { setBusy(false); }
   };

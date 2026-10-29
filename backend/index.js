@@ -24,6 +24,7 @@ const canonical = require('./lib/canonical.js');
 const auditLogChain = require('./lib/audit-log-chain.js');
 const zkpAudit = require('./lib/zkp-audit.js');
 const tpkFunding = require('./lib/tpk-funding.js');
+const tpkIdentity = require('./lib/tpk-identity.js');
 const config = require('./lib/config.js');
 const { columnName } = require('./lib/field-types');
 const { deriveSections } = require('./lib/sections.js');
@@ -35,6 +36,7 @@ const { deriveSections } = require('./lib/sections.js');
 // `setCariKunci`: perilaku ber-I/O ditukar eksplisit, bukan lewat env yang ada
 // atau tidak ada.
 let catatFormAudit = null;
+let cariAnggotaTpk = null;
 
 // Titik suntik untuk anchor per-record SINKRON pada POST /api/v1/records.
 // Bawaannya `anchorkanRecordDb` (menyentuh Sepolia sungguhan). Uji live jalur
@@ -1399,8 +1401,8 @@ app.get('/api/sasaran', async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // Login TPK berbasis identitas terdaftar. Wallet dibuat acak di browser dan
-// hanya alamat publiknya yang diikat ke NIK; private key tidak pernah masuk
-// ke server. NIK/nama hanya dipakai untuk mencocokkan baris tpk_members.
+// menandatangani pengaitan serta payload form; private key tidak pernah masuk
+// ke server. Identitas resmi diambil dari tpk_members, bukan dari nama form.
 // ---------------------------------------------------------------------------
 app.post('/api/auth/tpk/verify', async (req, res) => {
   if (!db.urlDatabase()) {
@@ -1413,7 +1415,7 @@ app.post('/api/auth/tpk/verify', async (req, res) => {
   try {
     const member = await db.transaksi({ role: 'operator' }, async (client) => {
       const result = await client.query(
-        `SELECT nik, nama_lengkap, id_tpk, wallet_address
+        `SELECT nik, nama_lengkap, wallet_address
            FROM tpk_members
           WHERE nik = $1
           LIMIT 1`,
@@ -1427,7 +1429,6 @@ app.post('/api/auth/tpk/verify', async (req, res) => {
       registered: true,
       name: member.nama_lengkap,
       nik: member.nik,
-      idTpk: member.id_tpk,
       walletAddress: member.wallet_address || null,
     });
   } catch (error) {
@@ -1440,8 +1441,16 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
   if (!db.urlDatabase()) return res.status(503).json({ success: false, message: 'Database belum tersedia.' });
   const nik = normalizeNik(req.body && req.body.nik);
   const walletAddress = String((req.body && req.body.walletAddress) || '').trim();
+  const signature = String((req.body && req.body.signature) || '');
   if (nik.length !== 16 || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
     return res.status(400).json({ success: false, message: 'Identitas atau alamat wallet tidak valid.' });
+  }
+  if (!tpkIdentity.tandaTanganValid(
+    walletAddress,
+    tpkIdentity.pesanIkatWallet(nik, walletAddress),
+    signature
+  )) {
+    return res.status(401).json({ success: false, message: 'Tanda tangan wallet tidak valid.' });
   }
   try {
     const result = await db.transaksi({ role: 'operator' }, async (client) => client.query(
@@ -1451,7 +1460,7 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
               funding_status = CASE WHEN wallet_address IS NULL THEN 'pending' ELSE funding_status END
         WHERE nik = $2
           AND (wallet_address IS NULL OR lower(wallet_address) = lower($1))
-      RETURNING nik, nama_lengkap, id_tpk, wallet_address, funding_status, funding_tx_hash, funding_attempted_at`,
+      RETURNING nik, nama_lengkap, wallet_address, funding_status, funding_tx_hash, funding_attempted_at`,
       [walletAddress, nik]
     ));
     if (result.rowCount === 0) {
@@ -1510,7 +1519,7 @@ app.post('/api/auth/tpk/wallet', async (req, res) => {
         ));
       }
     }
-    return res.json({ success: true, registered: true, walletAddress: member.wallet_address, name: member.nama_lengkap, nik: member.nik, idTpk: member.id_tpk, funding });
+    return res.json({ success: true, registered: true, walletAddress: member.wallet_address, name: member.nama_lengkap, nik: member.nik, funding });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Pengaitan wallet TPK gagal:`, error.message);
     return res.status(500).json({ success: false, message: 'Wallet gagal dikaitkan.' });
@@ -1787,7 +1796,7 @@ anchorkanRecord = anchorkanRecordDb;
  * @param {object} body payload form
  * @returns {Promise<{status:string, record_id?:string, commitment?:string, tx_hash?:string, error?:string, reason?:string}>}
  */
-async function catatRecordForm(body) {
+async function catatRecordForm(body, writer) {
   if (!db.urlDatabase()) {
     return { status: 'skipped', reason: 'DB_UNAVAILABLE' };
   }
@@ -1820,7 +1829,7 @@ async function catatRecordForm(body) {
       return { skipped: true, reason: 'JENIS_UNKNOWN', jenis: jenis || null };
     }
 
-    const { columns, values } = recordsWrite.kolomDanNilai(rec, FIELD_ORDER, 'form-publik');
+    const { columns, values } = recordsWrite.kolomDanNilai(rec, FIELD_ORDER, 'form-publik', writer);
     const tempat = values.map((_, i) => '$' + (i + 1)).join(', ');
     await client.query(
       'INSERT INTO records (' + columns.join(', ') + ') VALUES (' + tempat + ')',
@@ -2104,7 +2113,13 @@ app.post('/api/submit', async (req, res) => {
       return;
     }
 
-    const body = req.body || {};
+    const requestBody = req.body || {};
+    const {
+      writerWalletAddress,
+      writerSignature,
+      ...body
+    } = requestBody;
+    req.body = body;
     const errors = validate(body);
 
     // FR-4.4: pencatatan dan pembacaan masuk log akses yang sama. Kategori
@@ -2122,6 +2137,50 @@ if (errors.length > 0) {
       accessLog.tandai(res, { result: accessLog.HASIL.ERROR, params: Object.assign({}, res.locals.accessLog.params, { fields_invalid: errors.length }) });
       return res.status(400).json({ success: false, message: `Data tidak lengkap atau tidak valid: ${errors.join(', ')}`, errors });
     }
+
+    if (!/^0x[0-9a-fA-F]{40}$/.test(String(writerWalletAddress || '')) ||
+        !tpkIdentity.tandaTanganValid(
+          writerWalletAddress,
+          tpkIdentity.pesanPengiriman(writerWalletAddress, body),
+          writerSignature
+        )) {
+      accessLog.tandai(res, { result: accessLog.HASIL.DENIED_AUTH });
+      return res.status(401).json({ success: false, code: 'TPK_SIGNATURE_INVALID', message: 'Wallet kader harus menandatangani data sebelum dikirim.' });
+    }
+
+    let writer;
+    try {
+      if (!db.urlDatabase() && !cariAnggotaTpk) {
+        accessLog.tandai(res, { result: accessLog.HASIL.ERROR });
+        return res.status(503).json({ success: false, code: 'DB_UNAVAILABLE', message: 'Database verifikasi kader belum tersedia.' });
+      }
+      const lookup = cariAnggotaTpk || (async (walletAddress) => {
+        return db.transaksi({ role: 'operator' }, async (client) => {
+          const result = await client.query(
+            `SELECT nik, nama_lengkap, wallet_address
+               FROM tpk_members
+              WHERE lower(wallet_address) = lower($1)
+              LIMIT 1`,
+            [walletAddress]
+          );
+          return result.rows[0] || null;
+        });
+      });
+      writer = await lookup(writerWalletAddress);
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] Gagal memverifikasi anggota TPK:`, error.message);
+      accessLog.tandai(res, { result: accessLog.HASIL.ERROR });
+      return res.status(500).json({ success: false, code: 'TPK_LOOKUP_FAILED', message: 'Identitas kader gagal diverifikasi.' });
+    }
+    if (!writer) {
+      accessLog.tandai(res, { result: accessLog.HASIL.DENIED_AUTH });
+      return res.status(401).json({ success: false, code: 'TPK_WALLET_UNKNOWN', message: 'Wallet belum terdaftar pada anggota TPK.' });
+    }
+    const writerIdentity = {
+      nik: String(writer.nik),
+      name: String(writer.nama_lengkap),
+      walletAddress: String(writer.wallet_address),
+    };
 
     // Build row data for Sheets (async flush)
     const no = await nextNumberPlaceholder();
@@ -2148,7 +2207,7 @@ if (errors.length > 0) {
     let auditForm;
     try {
       auditForm = typeof catatFormAudit === 'function'
-        ? await catatFormAudit(body)
+        ? await catatFormAudit(body, writerIdentity)
         : { status: 'skipped', reason: 'DISABLED' };
     } catch (e) {
       console.error(`[${new Date().toISOString()}] Gagal mencatat record form:`, e.message);
@@ -2302,6 +2361,7 @@ module.exports.setCariKunci = (fn) => { cariKunci = fn; };
 // Titik suntik per-input audit jalur form. `null` mematikannya, supaya uji
 // /api/submit sukses tidak menulis ke PostgreSQL meski DATABASE_URL diset.
 module.exports.setCatatFormAudit = (fn) => { catatFormAudit = fn; };
+module.exports.setCariAnggotaTpk = (fn) => { cariAnggotaTpk = fn; };
 // Titik suntik anchor sinkron POST /api/v1/records. Stub `async () => ({ status:
 // 'pending', error: '...' })` mematikan penyiaran nyata tanpa mengubah bentuk
 // respons.

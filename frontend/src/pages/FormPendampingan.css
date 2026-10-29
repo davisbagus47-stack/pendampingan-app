@@ -103,6 +103,67 @@ html, body {
   font-size: 13px;
 }
 
+.wallet-password-reset {
+  position: relative;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.wallet-password-reset summary {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wallet-password-reset form {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  gap: 9px;
+  width: 260px;
+  padding: 14px;
+  border: 1px solid #d5dce5;
+  border-radius: 8px;
+  color: #2b3440;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.wallet-password-reset label {
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.wallet-password-reset input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #c5ced8;
+  border-radius: 5px;
+}
+
+.wallet-password-reset button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  color: #ffffff;
+  background: #1c5d8f;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.wallet-password-reset button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.wallet-password-reset form small {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .btn-logout {
   padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.35);

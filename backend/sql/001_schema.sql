@@ -344,6 +344,9 @@ CREATE TABLE records (
 
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_by       TEXT        NOT NULL DEFAULT 'operator',
+  writer_nik       TEXT,
+  writer_name      TEXT,
+  writer_wallet_address TEXT,
   UNIQUE (record_id, version)
 );
 
@@ -355,6 +358,12 @@ COMMENT ON COLUMN records.status IS
   'active = berlaku; redacted = dihapus secara logis. Penghapusan tidak membakar commit.';
 COMMENT ON COLUMN records.institution_id IS
   'Instansi pemilik record. Inilah X pada commitment_X = SHA256(record_hash || X) (ADR-3, FR-4.3).';
+COMMENT ON COLUMN records.writer_nik IS
+  'NIK anggota TPK yang menandatangani payload; tetap hanya di database.';
+COMMENT ON COLUMN records.writer_name IS
+  'Nama anggota TPK yang dipetakan dari tpk_members saat submit.';
+COMMENT ON COLUMN records.writer_wallet_address IS
+  'Wallet anggota TPK yang menandatangani payload; bukan wallet relayer on-chain.';
 
 INSERT INTO field_catalog
   (column_key, form_field, label, data_type, form_pos, sections, is_required) VALUES
@@ -439,6 +448,8 @@ CREATE INDEX idx_records_created    ON records (created_at);
 CREATE INDEX idx_records_sections   ON records USING GIN (sections);
 CREATE INDEX idx_records_payload    ON records USING GIN (payload_json jsonb_path_ops);
 CREATE INDEX idx_records_institusi ON records (institution_id);
+CREATE INDEX idx_records_writer_nik ON records (writer_nik);
+CREATE INDEX idx_records_writer_wallet ON records (lower(writer_wallet_address)) WHERE writer_wallet_address IS NOT NULL;
 
 -- ============================================================================
 -- ACCESS_LOG - append-only, termasuk permintaan yang DITOLAK (FR-4.4)

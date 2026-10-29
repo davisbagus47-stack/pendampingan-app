@@ -103,7 +103,7 @@ const DENIED_BAWAAN_KEYS = DENIED_BAWAAN_KEYS_HARFAP;
 const MANUAL_COLUMNS = new Set([
   'id', 'record_id', 'version', 'supersedes_id', 'status', 'payload_json',
   'record_hash', 'schema_version', 'sections', 'created_at', 'created_by',
-  'institution_id',
+  'institution_id', 'writer_nik', 'writer_name', 'writer_wallet_address',
 ]);
 
 /**
@@ -120,6 +120,7 @@ const MANUAL_COLUMNS = new Set([
  */
 const REQUIRED_SCHEMA_MARKERS = [
   ['records', '  institution_id  TEXT        NOT NULL REFERENCES agencies(institution_key),'],
+  ['records', '  writer_wallet_address TEXT,'],
   ['agencies', '  institution_key TEXT    NOT NULL UNIQUE'],
 ];
 
@@ -540,6 +541,9 @@ function emit(catalog) {
   w();
   w('  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),');
   w('  created_by       TEXT        NOT NULL DEFAULT ' + q('operator') + ',');
+  w('  writer_nik       TEXT,');
+  w('  writer_name      TEXT,');
+  w('  writer_wallet_address TEXT,');
   w('  UNIQUE (record_id, version)');
   w(');');
   w();
@@ -551,6 +555,12 @@ function emit(catalog) {
   w('  ' + q('active = berlaku; redacted = dihapus secara logis. Penghapusan tidak membakar commit.') + ';');
   w('COMMENT ON COLUMN records.institution_id IS');
   w('  ' + q('Instansi pemilik record. Inilah X pada commitment_X = SHA256(record_hash || X) (ADR-3, FR-4.3).') + ';');
+  w('COMMENT ON COLUMN records.writer_nik IS');
+  w('  ' + q('NIK anggota TPK yang menandatangani payload; tetap hanya di database.') + ';');
+  w('COMMENT ON COLUMN records.writer_name IS');
+  w('  ' + q('Nama anggota TPK yang dipetakan dari tpk_members saat submit.') + ';');
+  w('COMMENT ON COLUMN records.writer_wallet_address IS');
+  w('  ' + q('Wallet anggota TPK yang menandatangani payload; bukan wallet relayer on-chain.') + ';');
   w();
 
   // --- isi katalog
@@ -570,6 +580,8 @@ function emit(catalog) {
   w('CREATE INDEX idx_records_sections   ON records USING GIN (sections);');
   w('CREATE INDEX idx_records_payload    ON records USING GIN (payload_json jsonb_path_ops);');
   w('CREATE INDEX idx_records_institusi ON records (institution_id);');
+  w('CREATE INDEX idx_records_writer_nik ON records (writer_nik);');
+  w('CREATE INDEX idx_records_writer_wallet ON records (lower(writer_wallet_address)) WHERE writer_wallet_address IS NOT NULL;');
   w();
 
   // --- access_log

@@ -161,6 +161,11 @@ const FormPendampingan = ({ session, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
   const [successModal, setSuccessModal] = useState(null);
+  const [newWalletPassword, setNewWalletPassword] = useState('');
+  const [confirmWalletPassword, setConfirmWalletPassword] = useState('');
+  const [walletPasswordStatus, setWalletPasswordStatus] = useState('');
+  const [walletPasswordError, setWalletPasswordError] = useState('');
+  const [updatingWalletPassword, setUpdatingWalletPassword] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sasaranList, setSasaranList] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
@@ -186,6 +191,38 @@ const FormPendampingan = ({ session, onLogout }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleUpdateWalletPassword = async (event) => {
+    event.preventDefault();
+    setWalletPasswordError('');
+    setWalletPasswordStatus('');
+    if (newWalletPassword.length < 8) {
+      setWalletPasswordError('Password baru minimal 8 karakter.');
+      return;
+    }
+    if (newWalletPassword !== confirmWalletPassword) {
+      setWalletPasswordError('Konfirmasi password tidak sama.');
+      return;
+    }
+    setUpdatingWalletPassword(true);
+    try {
+      const encrypted = await session.updateWalletPassword(newWalletPassword);
+      const blob = new Blob([encrypted], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `wallet-${session.nik}-backup.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setNewWalletPassword('');
+      setConfirmWalletPassword('');
+      setWalletPasswordStatus('Password wallet diperbarui. Backup baru diunduh; simpan dengan aman.');
+    } catch (error) {
+      setWalletPasswordError(error.message || 'Password wallet gagal diperbarui.');
+    } finally {
+      setUpdatingWalletPassword(false);
+    }
   };
 
   const handleSearchChange = (e) => {
@@ -260,7 +297,12 @@ const FormPendampingan = ({ session, onLogout }) => {
     setLoading(true);
     setStatus(null);
     try {
-      const res = await axios.post(`${API_URL}/api/submit`, formData);
+      const writerSignature = await session.signSubmission(formData);
+      const res = await axios.post(`${API_URL}/api/submit`, {
+        ...formData,
+        writerWalletAddress: session.address,
+        writerSignature,
+      });
       const a = (res.data && res.data.anchor) || {};
       if (a.status === 'submitted' && a.tx_hash) {
         setSuccessModal({
@@ -329,6 +371,38 @@ const FormPendampingan = ({ session, onLogout }) => {
               <small>{shortAddress(session?.address)} · Sepolia</small>
               {fundingMessage(session?.funding) ? <small className="gov-funding-status">{fundingMessage(session.funding)}</small> : null}
             </div>
+            <details className="wallet-password-reset">
+              <summary>Atur password</summary>
+              <form onSubmit={handleUpdateWalletPassword}>
+                <label>
+                  Password baru
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength="8"
+                    value={newWalletPassword}
+                    onChange={(event) => setNewWalletPassword(event.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Ulangi password baru
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength="8"
+                    value={confirmWalletPassword}
+                    onChange={(event) => setConfirmWalletPassword(event.target.value)}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={updatingWalletPassword}>
+                  {updatingWalletPassword ? 'Menyimpan...' : 'Simpan password baru'}
+                </button>
+                {walletPasswordError ? <small role="alert">{walletPasswordError}</small> : null}
+                {walletPasswordStatus ? <small role="status">{walletPasswordStatus}</small> : null}
+              </form>
+            </details>
             <button type="button" className="btn-logout" onClick={onLogout}>Keluar</button>
           </div>
         </div>
