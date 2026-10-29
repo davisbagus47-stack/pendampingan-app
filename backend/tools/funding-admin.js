@@ -9,6 +9,7 @@ const { spawn } = require('child_process');
 const express = require('express');
 const db = require('../lib/db.js');
 const tpkFunding = require('../lib/tpk-funding.js');
+const tpkWalletReset = require('../lib/tpk-wallet-reset.js');
 
 const app = express();
 const port = Number(process.env.FUNDING_ADMIN_PORT || 3030);
@@ -142,6 +143,7 @@ app.get('/api/config', protect, (req, res) => res.json({
   success: true,
   enabled: String(process.env.TPK_AUTO_FUND_ENABLED || '').toLowerCase() === 'true',
   privateKeyConfigured: Boolean(process.env.TPK_FUNDING_PRIVATE_KEY),
+  walletResetSecretConfigured: Boolean(process.env.TPK_WALLET_RESET_ADMIN_KEY),
   amountEth: process.env.TPK_FUNDING_AMOUNT_ETH || '0.1',
   rpcUrl: process.env.TPK_FUNDING_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com',
 }));
@@ -199,6 +201,109 @@ app.post('/api/configure', protect, async (req, res) => {
   } catch (error) {
     console.error('Panel funding gagal mengonfigurasi:', error.message);
     return res.status(500).json({ success: false, message: error.message || 'Konfigurasi funding gagal.' });
+  }
+});
+
+app.post('/api/wallet-reset-secret', protect, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const secret = tpkWalletReset.buatSecretOperator();
+  try {
+    updateDotEnv({ TPK_WALLET_RESET_ADMIN_KEY: secret });
+    process.env.TPK_WALLET_RESET_ADMIN_KEY = secret;
+
+    try {
+      await runVercel([
+        'env', 'add', 'TPK_WALLET_RESET_ADMIN_KEY',
+        '--environment', 'production', '--force', '--sensitive',
+        '--project', 'pendampingan-app-mvbo',
+      ], secret);
+    } catch (error) {
+      console.error('Gagal mengirim secret reset wallet ke Vercel:', error.message);
+      return res.status(502).json({
+        success: false,
+        secret,
+        productionReady: false,
+        message: 'Secret dibuat dan disimpan lokal, tetapi belum berhasil disinkronkan ke Vercel. Salin dan simpan sekarang; periksa login Vercel lalu coba lagi.',
+      });
+    }
+
+    try {
+      await runVercel([
+        'deploy', '--cwd', '..', '--project', 'pendampingan-app-mvbo',
+        '--prod', '--yes',
+      ]);
+      return res.json({
+        success: true,
+        secret,
+        productionReady: true,
+        message: 'Secret tersimpan di Vercel Production dan backend berhasil di-deploy ulang.',
+      });
+    } catch (error) {
+      console.error('Secret reset wallet tersimpan, tetapi redeploy gagal:', error.message);
+      return res.status(502).json({
+        success: false,
+        secret,
+        productionReady: false,
+        message: 'Secret tersimpan di Vercel, tetapi redeploy gagal. Salin secret sekarang; endpoint reset baru aktif setelah backend berhasil di-deploy ulang.',
+      });
+    }
+  } catch (error) {
+    console.error('Panel funding gagal membuat secret reset wallet:', error.message);
+    return res.status(500).json({
+      success: false,
+      productionReady: false,
+      message: 'Secret reset wallet gagal dibuat atau disimpan lokal.',
+    });
+  }
+});
+
+app.post('/api/issue-wallet-reset-code', protect, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const nik = String((req.body && req.body.nik) || '').replace(/\D/g, '');
+  if (!/^\d{16}$/.test(nik)) {
+    return res.status(400).json({ success: false, message: 'NIK harus 16 digit.' });
+  }
+  const secret = String(process.env.TPK_WALLET_RESET_ADMIN_KEY || '');
+  if (secret.length < 32) {
+    return res.status(503).json({
+      success: false,
+      message: 'Secret operator belum tersedia. Buat secret dan deploy backend terlebih dahulu.',
+    });
+  }
+
+  try {
+    const apiBase = String(
+      process.env.TPK_WALLET_RESET_API_URL || 'https://pendampingan-app-mvbo.vercel.app'
+    ).replace(/\/+$/, '');
+    const response = await fetch(`${apiBase}/api/admin/tpk/wallet-reset-codes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tpk-wallet-reset-admin-key': secret,
+      },
+      body: JSON.stringify({ nik }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      return res.status(response.status || 502).json({
+        success: false,
+        message: data.message || 'Backend Production gagal menerbitkan kode reset.',
+      });
+    }
+    return res.status(201).json({
+      success: true,
+      resetCode: data.resetCode,
+      expiresAt: data.expiresAt,
+      expiresInMinutes: data.expiresInMinutes,
+      message: 'Kode satu kali berhasil diterbitkan. Kode ini bukan secret operator.',
+    });
+  } catch (error) {
+    console.error('Panel funding gagal menerbitkan kode reset wallet:', error.message);
+    return res.status(502).json({
+      success: false,
+      message: 'Backend Production tidak dapat dijangkau untuk menerbitkan kode reset.',
+    });
   }
 });
 

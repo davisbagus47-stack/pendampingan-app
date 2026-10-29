@@ -21,6 +21,16 @@ function pesanIkatWallet(nik, walletAddress) {
   ].join('\n');
 }
 
+function pesanResetWallet(nik, walletAddress, resetCode) {
+  return [
+    'Pendampingan TPK wallet reset v1',
+    'Chain: Sepolia (11155111)',
+    'NIK: ' + String(nik),
+    'Wallet: ' + String(walletAddress).toLowerCase(),
+    'Reset code: ' + String(resetCode),
+  ].join('\n');
+}
+
 function pesanPengiriman(walletAddress, payload) {
   const hashPayload = keccak256(toUtf8Bytes(stableJson(payload)));
   return [
@@ -43,6 +53,7 @@ function tandaTanganValid(walletAddress, message, signature) {
 module.exports = {
   stableJson,
   pesanIkatWallet,
+  pesanResetWallet,
   pesanPengiriman,
   tandaTanganValid,
 };

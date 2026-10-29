@@ -465,6 +465,40 @@ function emit(catalog) {
   w('  WITH CHECK (jwt_role() IN (\'operator\', \'admin\'));');
   w();
 
+  w('CREATE TABLE tpk_wallet_reset_codes (');
+  w('  id          BIGSERIAL PRIMARY KEY,');
+  w('  nik         TEXT NOT NULL REFERENCES tpk_members(nik) ON DELETE CASCADE,');
+  w('  token_hash  TEXT NOT NULL UNIQUE CHECK (token_hash ~ \'^[0-9a-f]{64}$\'),');
+  w('  expires_at  TIMESTAMPTZ NOT NULL,');
+  w('  used_at     TIMESTAMPTZ,');
+  w('  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()');
+  w(');');
+  w('CREATE INDEX idx_tpk_wallet_reset_codes_nik ON tpk_wallet_reset_codes (nik, expires_at);');
+  w('ALTER TABLE tpk_wallet_reset_codes ENABLE ROW LEVEL SECURITY;');
+  w('ALTER TABLE tpk_wallet_reset_codes FORCE ROW LEVEL SECURITY;');
+  w('CREATE POLICY tpk_wallet_reset_codes_operator_all ON tpk_wallet_reset_codes');
+  w('  FOR ALL USING (jwt_role() IN (\'operator\', \'admin\'))');
+  w('  WITH CHECK (jwt_role() IN (\'operator\', \'admin\'));');
+  w('GRANT SELECT, INSERT, UPDATE, DELETE ON tpk_wallet_reset_codes TO app_api;');
+  w('GRANT USAGE, SELECT ON SEQUENCE tpk_wallet_reset_codes_id_seq TO app_api;');
+  w();
+  w('CREATE TABLE tpk_wallet_history (');
+  w('  id                  BIGSERIAL PRIMARY KEY,');
+  w('  nik                 TEXT NOT NULL,');
+  w('  old_wallet_address  TEXT NOT NULL,');
+  w('  new_wallet_address  TEXT NOT NULL,');
+  w('  reset_at            TIMESTAMPTZ NOT NULL DEFAULT now()');
+  w(');');
+  w('CREATE INDEX idx_tpk_wallet_history_nik ON tpk_wallet_history (nik, reset_at);');
+  w('ALTER TABLE tpk_wallet_history ENABLE ROW LEVEL SECURITY;');
+  w('ALTER TABLE tpk_wallet_history FORCE ROW LEVEL SECURITY;');
+  w('CREATE POLICY tpk_wallet_history_operator_all ON tpk_wallet_history');
+  w('  FOR ALL USING (jwt_role() IN (\'operator\', \'admin\'))');
+  w('  WITH CHECK (jwt_role() IN (\'operator\', \'admin\'));');
+  w('GRANT SELECT, INSERT, UPDATE, DELETE ON tpk_wallet_history TO app_api;');
+  w('GRANT USAGE, SELECT ON SEQUENCE tpk_wallet_history_id_seq TO app_api;');
+  w();
+
   // --- records
   w('-- ============================================================================');
   w('-- RECORDS - system of record dengan versioning (ADR-1, ADR-4)');

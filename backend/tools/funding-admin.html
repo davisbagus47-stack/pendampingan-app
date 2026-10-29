@@ -15,13 +15,15 @@
     button { border: 0; border-radius: 10px; padding: 11px 15px; color: #07101f; background: linear-gradient(100deg, #73dcff, #a8a0ff); cursor: pointer; font-weight: 800; }
     button.secondary { color: #c8edff; border: 1px solid #41678e; background: transparent; }
     button:disabled { opacity: .55; cursor: wait; }
-    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
     .card, .panel { border: 1px solid rgba(113, 174, 255, .24); border-radius: 16px; background: rgba(12, 28, 51, .82); box-shadow: 0 16px 44px rgba(0,0,0,.2); }
     .card { padding: 15px; }.card span { display: block; color: #8ea4bf; font-size: 12px; }.card strong { display: block; margin-top: 8px; font-size: 22px; }
     .panel { overflow: hidden; }.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid rgba(113, 174, 255, .16); }.panel-head h2 { margin: 0; font-size: 18px; }
     .table-wrap { overflow-x: auto; } table { width: 100%; border-collapse: collapse; min-width: 760px; } th, td { padding: 12px 16px; border-bottom: 1px solid rgba(113, 174, 255, .1); text-align: left; font-size: 13px; } th { color: #8ea4bf; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; } td strong { color: #e2f5ff; } td small { display: block; margin-top: 4px; color: #8198b2; }
     .status { display: inline-flex; padding: 5px 8px; border-radius: 99px; color: #b9f4d2; background: rgba(20, 142, 91, .2); font-size: 11px; }.status.pending, .status.processing, .status.submitted, .status.saldo_habis { color: #ffe1a8; background: rgba(145, 93, 20, .2); }.status.failed, .status.belum_didanai { color: #ffb8bd; background: rgba(180, 36, 60, .2); }
     .message { min-height: 20px; margin: 15px 0; color: #b9f4d2; }.message.error { color: #ffb8bd; }
+    .reset-panel { margin-bottom: 18px; padding: 18px; border: 1px solid rgba(255, 196, 102, .3); border-radius: 16px; background: rgba(12, 28, 51, .82); }.reset-panel h2 { margin: 0 0 8px; font-size: 18px; }.reset-panel p { margin: 8px 0 14px; font-size: 13px; line-height: 1.5; }.reset-row { display: flex; align-items: center; gap: 12px; }.reset-secret { flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 12px; border: 1px solid #41678e; border-radius: 10px; color: #dff6ff; background: #08182c; font-family: ui-monospace, monospace; }.reset-panel[hidden], .reset-secret[hidden] { display: none; }
+    .issue-reset { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(113, 174, 255, .16); }.issue-reset label { margin-top: 0; }.issue-reset-row { display: flex; align-items: end; gap: 10px; }.issue-reset-row label { flex: 1; }.reset-code-result { margin-top: 12px; }.reset-code-meta { color: #ffe1a8; font-size: 12px; }
     dialog { width: min(520px, calc(100% - 30px)); border: 1px solid #41678e; border-radius: 18px; color: #e9f2ff; background: #0c1c33; box-shadow: 0 25px 80px #000; } dialog::backdrop { background: rgba(0,0,0,.65); } dialog h2 { margin-top: 0; } label { display: block; margin: 14px 0 7px; color: #c7d6e8; font-size: 13px; font-weight: 700; } input { width: 100%; padding: 12px; border: 1px solid #2b4667; border-radius: 10px; outline: none; color: #fff; background: #08182c; } input:focus { border-color: #72d9ff; } .warning { padding: 11px; border-radius: 10px; color: #ffe1a8; background: rgba(145, 93, 20, .16); font-size: 12px; line-height: 1.45; } .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
     @media (max-width: 700px) { header { align-items: flex-start; flex-direction: column; }.cards { grid-template-columns: repeat(2, 1fr); } }
   </style>
@@ -29,8 +31,18 @@
 <body>
   <main>
     <header><div><h1>Funding Admin TPK</h1><p>Panel lokal untuk melihat wallet dan konfigurasi pendanaan Sepolia.</p></div><button id="configureButton">Konfigurasi Funding</button></header>
-    <section class="cards"><div class="card"><span>Total TPK</span><strong id="total">-</strong></div><div class="card"><span>Wallet terdaftar</span><strong id="wallets">-</strong></div><div class="card"><span>Funding aktif</span><strong id="enabled">-</strong></div><div class="card"><span>Treasury key</span><strong id="key">-</strong></div></section>
+    <section class="cards"><div class="card"><span>Total TPK</span><strong id="total">-</strong></div><div class="card"><span>Wallet terdaftar</span><strong id="wallets">-</strong></div><div class="card"><span>Funding aktif</span><strong id="enabled">-</strong></div><div class="card"><span>Treasury key</span><strong id="key">-</strong></div><div class="card"><span>Secret reset wallet</span><strong id="resetSecretStatus">-</strong></div></section>
     <p id="message" class="message"></p>
+    <section class="reset-panel">
+      <h2>Reset password wallet kader</h2>
+      <p>Tombol ini membuat secret acak baru, menyimpannya di komputer ini, mengirimnya sebagai secret ke Vercel Production, lalu men-deploy ulang backend. Secret lama akan diganti. Secret hanya ditampilkan sekali—simpan di pengelola kata sandi dan jangan bagikan ke kader.</p>
+      <div class="reset-row"><button id="createResetSecretButton">Buat secret reset</button><span id="resetSecret" class="reset-secret" hidden></span><button id="copyResetSecretButton" class="secondary" hidden>Salin secret</button></div>
+      <div class="issue-reset">
+        <p>Secret di atas hanya untuk operator, bukan untuk dimasukkan di halaman login kader. Verifikasi identitas kader secara langsung, lalu terbitkan kode satu kali di sini.</p>
+        <div class="issue-reset-row"><label for="resetNik">NIK kader yang sudah diverifikasi<input id="resetNik" inputmode="numeric" maxlength="16" autocomplete="off" placeholder="Masukkan 16 digit NIK"></label><button id="issueResetCodeButton">Terbitkan kode kader</button></div>
+        <div id="resetCodeResult" class="reset-code-result" hidden><div class="reset-row"><span id="resetCode" class="reset-secret"></span><button id="copyResetCodeButton" class="secondary">Salin kode</button></div><p id="resetCodeExpiry" class="reset-code-meta"></p></div>
+      </div>
+    </section>
     <section class="panel"><div class="panel-head"><h2>Daftar TPK dari Supabase</h2><button class="secondary" id="refreshButton">Refresh</button></div><div class="table-wrap"><table><thead><tr><th>Nama</th><th>NIK</th><th>Wallet</th><th>Status funding</th><th>Transaksi terakhir</th></tr></thead><tbody id="members"><tr><td colspan="5">Memuat...</td></tr></tbody></table></div></section>
   </main>
   <dialog id="configDialog"><form method="dialog" id="configForm"><h2>Konfigurasi Funding</h2><p>Konfigurasi ini disimpan lokal, dikirim ke Vercel Production, lalu langsung redeploy backend.</p><div class="warning">Gunakan private key treasury Sepolia khusus. Jangan gunakan private key wallet TPK pengguna.</div><label for="privateKey">Private key treasury Sepolia</label><input id="privateKey" type="password" autocomplete="off" required><label for="amountEth">Jumlah ETH per wallet</label><input id="amountEth" value="0.1" inputmode="decimal" required><label for="rpcUrl">RPC URL Sepolia</label><input id="rpcUrl" value="https://ethereum-sepolia-rpc.publicnode.com" required><div class="dialog-actions"><button class="secondary" type="button" id="cancelButton">Batal</button><button type="submit" id="saveButton">Simpan + Redeploy</button></div></form></dialog>
@@ -42,10 +54,83 @@
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
     const statusNames = { funded: 'Sudah didanai', saldo_habis: 'Saldo habis', submitted: 'Terkirim', pending: 'Menunggu', processing: 'Diproses', failed: 'Gagal', belum_didanai: 'Belum didanai' };
     const statusLabel = (status) => `<span class="status ${escapeHtml(status)}">${escapeHtml(statusNames[status] || status)}</span>`;
-    async function loadConfig() { const response = await fetch('/api/config', { headers }); const data = await response.json(); if (!response.ok) throw new Error(data.message); $('enabled').textContent = data.enabled ? 'Ya' : 'Tidak'; $('key').textContent = data.privateKeyConfigured ? 'Tersedia' : 'Belum ada'; $('amountEth').value = data.amountEth; $('rpcUrl').value = data.rpcUrl; }
+    async function loadConfig() { const response = await fetch('/api/config', { headers }); const data = await response.json(); if (!response.ok) throw new Error(data.message); $('enabled').textContent = data.enabled ? 'Ya' : 'Tidak'; $('key').textContent = data.privateKeyConfigured ? 'Tersedia' : 'Belum ada'; $('resetSecretStatus').textContent = data.walletResetSecretConfigured ? 'Tersedia' : 'Belum ada'; $('amountEth').value = data.amountEth; $('rpcUrl').value = data.rpcUrl; }
     async function loadMembers() { const response = await fetch('/api/members', { headers }); const data = await response.json(); if (!response.ok) throw new Error(data.message); const rows = data.members; $('total').textContent = rows.length; $('wallets').textContent = rows.filter((row) => row.walletAddress).length; $('members').innerHTML = rows.map((row) => `<tr><td><strong>${escapeHtml(row.name || '-')}</strong><small>${escapeHtml(row.idTpk || '')}</small></td><td>${escapeHtml(row.nik)}</td><td>${row.walletAddress ? `<strong>${escapeHtml(row.walletLabel)}</strong>` : '<small>Belum ada wallet</small>'}</td><td>${statusLabel(row.fundingStatus)}${row.fundingAttemptedAt ? `<small>${escapeHtml(new Date(row.fundingAttemptedAt).toLocaleString('id-ID'))}</small>` : ''}</td><td>${row.fundingTxHash ? `<small>${escapeHtml(row.fundingTxHash.slice(0, 16))}...</small>` : '<small>-</small>'}</td></tr>`).join(''); }
     async function refresh() { try { message('Memuat data...'); await Promise.all([loadConfig(), loadMembers()]); message('Data berhasil diperbarui.'); } catch (error) { message(error.message || 'Data gagal dimuat.', true); } }
     $('refreshButton').addEventListener('click', refresh); $('configureButton').addEventListener('click', () => $('configDialog').showModal()); $('cancelButton').addEventListener('click', () => $('configDialog').close());
+    $('createResetSecretButton').addEventListener('click', async () => {
+      if ($('resetSecretStatus').textContent === 'Tersedia' && !window.confirm('Secret lama akan diganti dan tidak dapat digunakan lagi. Lanjutkan?')) return;
+      $('createResetSecretButton').disabled = true;
+      $('resetSecret').hidden = true;
+      $('copyResetSecretButton').hidden = true;
+      message('Membuat secret, mengirim ke Vercel, dan men-deploy ulang backend...');
+      try {
+        const response = await fetch('/api/wallet-reset-secret', { method: 'POST', headers });
+        const data = await response.json();
+        if (data.secret) {
+          $('resetSecret').textContent = data.secret;
+          $('resetSecret').hidden = false;
+          $('copyResetSecretButton').hidden = false;
+        }
+        if (data.secret) $('resetSecretStatus').textContent = data.productionReady ? 'Tersedia' : 'Belum aktif';
+        if (!response.ok || !data.success) throw new Error(data.message || 'Pembuatan secret gagal.');
+        message(`${data.message} Salin dan simpan secret sebelum menutup halaman.`);
+      } catch (error) {
+        message(error.message || 'Secret reset gagal dibuat.', true);
+      } finally {
+        $('createResetSecretButton').disabled = false;
+      }
+    });
+    $('copyResetSecretButton').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('resetSecret').textContent);
+        message('Secret tersalin. Simpan di pengelola kata sandi; halaman ini tidak dapat menampilkannya kembali.');
+      } catch (error) {
+        message('Clipboard tidak tersedia. Salin secret yang tampil secara manual.', true);
+      }
+    });
+    $('resetNik').addEventListener('input', (event) => {
+      event.target.value = event.target.value.replace(/\D/g, '').slice(0, 16);
+    });
+    $('issueResetCodeButton').addEventListener('click', async () => {
+      const nik = $('resetNik').value;
+      if (!/^\d{16}$/.test(nik)) {
+        message('Masukkan NIK kader yang sudah diverifikasi (16 digit).', true);
+        return;
+      }
+      if ($('resetSecretStatus').textContent !== 'Tersedia') {
+        message('Buat dan aktifkan secret operator terlebih dahulu.', true);
+        return;
+      }
+      $('issueResetCodeButton').disabled = true;
+      $('resetCodeResult').hidden = true;
+      message('Meminta kode satu kali dari backend Production...');
+      try {
+        const response = await fetch('/api/issue-wallet-reset-code', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nik }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || 'Kode reset gagal diterbitkan.');
+        $('resetCode').textContent = data.resetCode;
+        $('resetCodeExpiry').textContent = `Berlaku sampai ${new Date(data.expiresAt).toLocaleString('id-ID')}. Kode ini hanya untuk kolom “Kode reset operator” di halaman kader.`;
+        $('resetCodeResult').hidden = false;
+        message('Kode satu kali dibuat. Salin ke formulir kader sekarang; kode ini tidak bisa ditampilkan kembali dan akan kedaluwarsa dalam 15 menit.');
+      } catch (error) {
+        message(error.message || 'Kode reset gagal diterbitkan.', true);
+      } finally {
+        $('issueResetCodeButton').disabled = false;
+      }
+    });
+    $('copyResetCodeButton').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('resetCode').textContent);
+        message('Kode satu kali tersalin. Tempel ke kolom “Kode reset operator” halaman kader; jangan masukkan secret operator.');
+      } catch (error) {
+        message('Clipboard tidak tersedia. Salin kode yang tampil secara manual.', true);
+      }
+    });
     $('configForm').addEventListener('submit', async (event) => { event.preventDefault(); $('saveButton').disabled = true; message('Menyimpan env, mengirim ke Vercel, dan redeploy...'); try { const response = await fetch('/api/configure', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ privateKey: $('privateKey').value, amountEth: $('amountEth').value, rpcUrl: $('rpcUrl').value, syncVercel: true }) }); const data = await response.json(); if (!response.ok) throw new Error(data.message); $('privateKey').value = ''; $('configDialog').close(); message(data.message); await refresh(); } catch (error) { message(error.message || 'Konfigurasi gagal.', true); } finally { $('saveButton').disabled = false; } });
     refresh();
     window.setInterval(() => { loadMembers().catch((error) => message(error.message || 'Status funding gagal diperbarui.', true)); }, 30000);

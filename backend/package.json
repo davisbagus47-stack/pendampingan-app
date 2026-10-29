@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "funding:admin": "node tools/funding-admin.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/tpk-wallet-reset.test.js"
   },
   "keywords": [],
   "author": "",

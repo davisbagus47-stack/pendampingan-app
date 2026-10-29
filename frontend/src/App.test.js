@@ -7,6 +7,7 @@ jest.mock('axios', () => ({
 }));
 
 test('renders the separate login page', () => {
+  window.location.hash = '#/login';
   render(<App />);
   expect(screen.getByRole('heading', { name: /masuk dengan wallet/i })).toBeInTheDocument();
   expect(window.location.hash).toBe('#/login');

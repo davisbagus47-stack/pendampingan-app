@@ -30,4 +30,9 @@
 .web3-file-label { display: block; padding: 11px 12px; border: 1px solid #806431; border-radius: 10px; color: #ffe5af !important; background: rgba(255, 196, 102, .08); cursor: pointer; text-align: center; }
 .web3-file-label input { display: block; width: 100%; margin-top: 8px; padding: 0; border: 0; color: #d8c49d; background: transparent; font-size: 12px; cursor: pointer; }
 .web3-backup { margin-top: 8px; }
+.web3-reset { margin-top: 14px; padding: 14px; border: 1px solid rgba(255, 196, 102, .35); border-radius: 14px; background: rgba(145, 93, 20, .12); color: #ffe1a8; }
+.web3-reset summary { cursor: pointer; font-size: 13px; font-weight: 700; }
+.web3-reset p { color: #d8c49d; font-size: 12px; line-height: 1.5; }
+.web3-reset form { display: grid; gap: 8px; margin-top: 12px; }
+.web3-reset label { margin: 4px 0 0 !important; }
 @media (max-width: 480px) { .web3-card { padding: 32px 22px 25px; border-radius: 20px; }.web3-card h1 { font-size: 28px; }.web3-faucet { flex-direction: column; }.web3-faucet-links { text-align: left; }.web3-faucet a { text-align: left; } }

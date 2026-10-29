@@ -1,0 +1,12 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Funding Admin TPK",
+			"type": "shell",
+			"command": "npm --prefix backend run funding:admin",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

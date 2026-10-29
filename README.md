@@ -1,5 +1,9 @@
 # Pendampingan App
 
+Aplikasi formulir pendampingan keluarga untuk program penurunan stunting berdasarkan **SE BKKBN No. 12 Tahun 2024**.
+
+> Dokumentasi ini mengikuti implementasi aktif di backend, frontend, skema PostgreSQL, dan konfigurasi Vercel. Jenis sasaran yang didukung: `Catin`, `Ibu Hamil`, `Ibu Nifas`, `Baduta`, dan `Balita`.
+
 Aplikasi formulir pendampingan keluarga untuk program penurunan stunting berdasarkan **SE BKKBN No. 12 Tahun 2024**. Digunakan oleh Tim Pendamping Keluarga (TPK) — Bidan, Kader PKK, dan Kader KB — untuk mencatat data kunjungan ke sasaran keluarga berisiko stunting.
 
 ## Arsitektur Sistem
@@ -23,10 +27,12 @@ Aplikasi formulir pendampingan keluarga untuk program penurunan stunting berdasa
 
 **Alur data:**
 1. TPK isi form di frontend → `POST /api/submit`
-2. Backend tulis ke **Google Sheets** (audit) + **PostgreSQL** (record + `chain_outbox`)
+2. Backend memvalidasi lalu menyimpan record kanonik ke **PostgreSQL** dan antrean `sheets_pending`; flush ke **Google Sheets** dilakukan oleh cron
 3. Backend **broadcast tx ke Sepolia** (mode hybrid: balas cepat `submitted` + `tx_hash`)
-4. **Vercel Cron** harian panggil `GET /api/cron/anchor` → worker sapu `chain_outbox` → cek receipt → update `anchored`
+4. **Vercel Cron** memanggil `GET /api/cron/anchor` → worker menyapu `chain_outbox` → cek receipt → update `anchored`; cron kedua memanggil `/api/cron/sheets-flush`
 5. Record terverifikasi on-chain via `isAnchored(record_id)`
+
+Setiap submit form ditandatangani wallet kader. Backend mencocokkan alamat penanda tangan ke `tpk_members`, lalu menyimpan `writer_nik`, `writer_name`, dan `writer_wallet_address` pada record Supabase. NIK kader tidak ditambahkan sebagai field/event blockchain; transaksi anchor tetap ditandatangani relayer backend dan hanya mengirim commitment hash.
 
 ## Tech Stack
 
@@ -37,7 +43,7 @@ Aplikasi formulir pendampingan keluarga untuk program penurunan stunting berdasa
 | Database | **PostgreSQL (Supabase)** + **Google Sheets API v4** (dual-write) |
 | Blockchain | **Sepolia (Ethereum testnet)** via **Foundry** smart contract |
 | Anchoring | `lib/anchor-chain.js` + `lib/anchor-record.js` + `lib/anchor-worker.js` |
-| Cron | Vercel Cron (`0 17 * * *`) → `GET /api/cron/anchor` |
+| Cron | Vercel Cron: `0 17 * * *` → `/api/cron/anchor`; `0 18 * * *` → `/api/cron/sheets-flush` |
 | ZKP | `lib/zkp-audit.js` + `zkp/` (circom/snarkjs) |
 | Deployment | Vercel (2 project: backend + frontend) |
 | Auth/Rate Limit | API Key per agency + `agency_categories` grant + rate limit |
@@ -54,7 +60,12 @@ Aplikasi formulir pendampingan keluarga untuk program penurunan stunting berdasa
 - **Anchor hybrid**: respons form cepat (`status: submitted` + `tx_hash`), finalisasi `anchored` oleh worker/cron
 - **Anchor verification**: `GET /api/v1/audit/proof` mengembalikan Merkle proof + receipt on-chain
 - **ZKP proof** (opsional): `GET /api/v1/audit/zkp-proof`
-- **Reconciliation**: `GET /api/v1/audit/reconcile` bandingkan payload vs on-chain
+- **API key agency**: verifikasi `X-Agency-Key`, status key (`primary`/`standby`/`revoked`), grant kategori, dan cakupan desa/kecamatan
+- **Query API terkontrol**: filter kategori/wilayah/tanggal, cursor pagination, pemilihan `fields`, dan output `json`/`csv`/`xlsx`
+- **Koreksi berversi**: record lama tidak ditimpa; versi baru ditautkan melalui `supersedes_id`
+- **Audit log**: seluruh request, penolakan auth, rate limit, format output, dan jumlah baris dicatat ke `access_log`
+- **Konfigurasi agency**: kolom tersembunyi, urutan kolom, filter bawaan, dan format bawaan
+- **Login TPK dan wallet**: verifikasi TPK, pembuatan wallet, serta pendanaan otomatis opsional dari treasury Sepolia
 - Rate limit per agency + category grant via `agency_categories`
 
 ## Struktur Proyek
@@ -69,17 +80,24 @@ pendampingan-app/
 │   │   ├── anchor-record.js      # Antrean serial nonce per institusi
 │   │   ├── anchor-worker.js      # Logika penyapu outbox (cek receipt, update status)
 │   │   ├── backfill.js           # Import massal dari spreadsheet lama
-│   │   ├── backfill.js           # Import massal dari spreadsheet lama
 │   │   ├── canonical.js          # Kanonikalisasi payload → record_hash (SHA-256 JCS)
 │   │   ├── column-grants.py      # Field-level access control (FR-4.9–4.12)
 │   │   ├── db.js                 # Pool pg + transaksi + peran (operator/agency/admin)
 │   │   ├── field-types.js        # Tipe kolom & skala desimal
-│   │   ├── records-query.js      # Query records dengan grant & filter
-│   │   ├── records-write.js      # Bangun record + payload_json + hash
+│   │   ├── records-query.js      # Query records dengan grant, filter, cursor, dan format
+│   │   ├── records-write.js      # Bangun record + payload_json + hash + versioning
+│   │   ├── access-log.js         # Audit log setiap request dan hasil respons
+│   │   ├── api-key-auth.js       # Verifikasi X-Agency-Key dan scope kategori
+│   │   ├── rate-limit.js         # Rate limit per agency dan jalur publik
+│   │   ├── tpk-identity.js       # Verifikasi signature wallet kader
+│   │   ├── config.js             # Konfigurasi agency (kolom, filter, format)
+│   │   ├── tpk-funding.js        # Pembuatan dan pendanaan wallet TPK
+│   │   ├── worker-sheets.js      # Flush antrean sheets_pending ke Google Sheets
 │   │   ├── zkp-audit.js          # ZKP proof generation (circom/snarkjs)
 │   │   └── ... (sections, sheets-mirror, xlsx-export)
 │   ├── sql/
-│   │   └── 001_schema.sql        # DDL lengkap + @@FUNGSI migrasi idempoten
+│   │   ├── 001_schema.sql        # DDL lengkap + @@FUNGSI migrasi idempoten
+│   │   └── 002_tpk_writer_identity.sql # Kolom audit identitas kader per record
 │   ├── tools/
 │   │   ├── db-setup.js           # Terapkan skema & seed (terapkan/cek/seed)
 │   │   ├── seed-operator.js      # Seed instansi operator + grant kategori
@@ -91,11 +109,11 @@ pendampingan-app/
 │   ├── contracts/                # Foundry smart contract (DataAnchor.sol)
 │   ├── zkp/                      # Circom circuits + verifier
 │   ├── index.js                  # Express app
-│   ├── vercel.json               # Cron, rewrites, maxDuration
+│   ├── vercel.json               # Rewrites, maxDuration, dan dua jadwal cron
 │   ├── .env.example              # Template env
 │   └── package.json
 ├── frontend/
-│   ├── src/pages/FormPendampingan.jsx   # Halaman formulir utama
+│   ├── src/pages/FormPendampingan.jsx   # Halaman formulir + login/wallet TPK
 │   ├── src/pages/FormPendampingan.css
 │   └── package.json
 ├── docs/
@@ -146,6 +164,10 @@ node tools/db-setup.js cek
 node tools/generate-schema.js
 ```
 
+Untuk database yang sudah berisi skema, jalankan [002_tpk_writer_identity.sql](backend/sql/002_tpk_writer_identity.sql) setelah skema utama. Migrasi ini menambahkan kolom atribusi wallet kader ke `records`. Untuk alur pemulihan wallet, jalankan juga [003_tpk_wallet_reset.sql](backend/sql/003_tpk_wallet_reset.sql).
+
+Panel lokal **Funding Admin TPK** menyediakan tombol **Buat secret reset** untuk membuat secret operator acak, menyimpannya secara lokal, menyinkronkannya sebagai secret Vercel Production, lalu men-deploy ulang backend. Secret hanya ditampilkan sekali; simpan di pengelola kata sandi dan jangan bagikan kepada kader. Lihat [panduan reset wallet](backend/TPK_WALLET_RESET.md).
+
 ### Uji & Verifikasi
 
 ```bash
@@ -190,10 +212,11 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast
 | `TPK_FUNDING_PRIVATE_KEY` | Tidak | Private key treasury Sepolia khusus pendanaan TPK; jangan gunakan di frontend |
 | `TPK_FUNDING_RPC_URL` | Tidak | RPC pendanaan TPK (default `ANCHOR_RPC_URL` atau PublicNode Sepolia) |
 | `TPK_FUNDING_AMOUNT_ETH` | Tidak | Jumlah per wallet baru (default `0.1`) |
+| `TPK_WALLET_RESET_ADMIN_KEY` | Tidak | Secret operator untuk menerbitkan kode reset wallet kader; jangan pasang di frontend |
 | `ANCHOR_FROM_BLOCK` | Tidak | Block mulai sinkronisasi event (default: deploy block) |
 | `ANCHOR_CRON_BATCH` | Tidak | Batch size per cron run (default: `5`) |
 | `CRON_SECRET` | Ya | Bearer token untuk `GET /api/cron/anchor` |
-| `ANCHOR_CRON_BATCH` | Tidak | Batch per cron run (default: `5`) |
+| `SHEETS_FLUSH_BATCH` | Tidak | Jumlah item antrean yang dikirim ke Google Sheets per cron (default: `50`) |
 | `FORM_INSTITUTION_KEY` | Tidak | Kunci instansi form publik (default: `operator-data-center`) |
 | `PORT` | Tidak | Port lokal (default: `3001`) |
 | `CORS_ORIGIN` | Tidak | Origin CORS (default: `*`) |
@@ -213,16 +236,31 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast
 | `GET` | `/` | Health check |
 | `GET` | `/api/sasaran` | Daftar sasaran unik (NIK + nama) dari master sheet |
 | `POST` | `/api/submit` | **Form publik** → Sheets + PostgreSQL + anchor hybrid (balas cepat `submitted` + `tx_hash`) |
-| `POST` | `/api/v1/records` | **API ber-auth** (agency key) → record + anchor sinkron |
-| `GET` | `/api/cron/anchor` | **Penyapu outbox** (Butuh `Authorization: Bearer <CRON_SECRET>`) |
+| `POST` | `/api/auth/tpk/verify` | Verifikasi NIK TPK dan membuat sesi form |
+| `POST` | `/api/auth/tpk/wallet` | Membuat/mengambil wallet TPK dan pendanaan Sepolia opsional |
+| `GET` | `/api/v1/records` | Query record ber-auth dengan filter, grant kategori/wilayah, cursor, `fields`, dan format `json`/`csv`/`xlsx` |
+| `POST` | `/api/v1/records` | Tambah record atau koreksi versi sebelumnya; memerlukan agency key dan grant |
+| `GET` | `/api/v1/config` | Membaca konfigurasi tampilan agency |
+| `PUT` | `/api/v1/config` | Memperbarui konfigurasi tampilan agency yang diizinkan |
+| `GET` | `/api/audit/status` | Status audit/anchoring aplikasi |
 | `GET` | `/api/v1/audit/proof` | Merkle proof + receipt on-chain untuk `record_id` |
 | `GET` | `/api/v1/audit/zkp-proof` | ZKP proof untuk record |
-| `GET` | `/api/v1/audit/reconcile` | Reconciliation payload vs on-chain |
-| `GET` | `/api/v1/auth/nonce` | Nonce untuk SIWE (web3 login, planned) |
-| `POST` | `/api/v1/auth/verify` | Verifikasi signature SIWE (planned) |
+| `GET` | `/api/cron/anchor` | Penyapu `chain_outbox`; wajib `Authorization: Bearer <CRON_SECRET>` |
+| `GET` | `/api/cron/sheets-flush` | Mengirim `sheets_pending` ke Google Sheets; wajib `CRON_SECRET` |
 
-**Auth API ber-auth (`/api/v1/*`)**: Header `X-Agency-Key: <institution_key>` (sudah memiliki grant di `agency_categories`).
-**Rate limit**: 30 req/menit per agency (konfig di `agency_rate_limit`).
+**Auth API ber-auth (`/api/v1/*`)**: kirim header `X-Agency-Key: <token>` untuk key yang aktif. Scope akses ditentukan oleh `agency_categories`, `agency_desa_scope`, dan `agency_denied_columns`.
+**Rate limit**: default 30 req/menit per agency; dapat dikonfigurasi melalui `agency_rate_limit`. Jalur form publik memakai kuota bersama yang lebih longgar.
+
+### Query dan koreksi record
+
+`GET /api/v1/records` mendukung `kategori_1`, `kategori_2`, `desa`, `tanggal_mulai`, `tanggal_selesai`, `limit`, `cursor`, `fields`, dan `format`. `format` dapat berupa `json`, `csv`, atau `xlsx`; kolom yang tidak mendapat grant akan ditolak dan tidak dikirim.
+
+`POST /api/v1/records` membuat `version = 1` jika `record_id` dan `version` tidak dikirim. Untuk koreksi, kirim keduanya; backend membuat versi baru dan mengisi `supersedes_id`, sehingga riwayat record tetap utuh.
+
+### Cron dan antrean
+
+- `/api/cron/anchor` memproses `chain_outbox`, memeriksa receipt Sepolia, dan melakukan retry transaksi yang masih tertunda.
+- `/api/cron/sheets-flush` memproses `sheets_pending` secara asinkron ke Google Sheets. Keduanya menolak request jika `CRON_SECRET` belum diatur atau bearer token tidak cocok.
 
 ## Deployment (Vercel)
 
@@ -230,11 +268,11 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast
 - Framework Preset: **Other**
 - Build Command: *(kosong)*
 - Output Directory: *(kosong)*
-- `vercel.json` sudah menyediakan: rewrite semua rute ke `api/index.js`, cron harian, `maxDuration: 60`
+- `vercel.json` sudah menyediakan: rewrite semua rute ke `api/index.js`, `maxDuration: 60`, dan dua cron: `0 17 * * *` untuk anchor serta `0 18 * * *` untuk flush Google Sheets
 
 Env di dashboard Vercel (Settings → Environment Variables):
 - `DATABASE_URL`, `GOOGLE_CREDENTIALS_JSON`, `SHEET_ID`, `REF_SHEET_ID`, `REF_SHEET_NAME`
-- `ANCHOR_RPC_URL`, `ANCHOR_PRIVATE_KEY`, `ANCHOR_CONTRACT`, `ANCHOR_FROM_BLOCK`, `ANCHOR_CRON_BATCH`
+- `ANCHOR_RPC_URL`, `ANCHOR_PRIVATE_KEY`, `ANCHOR_CONTRACT`, `ANCHOR_FROM_BLOCK`, `ANCHOR_CRON_BATCH`, `SHEETS_FLUSH_BATCH`
 - `TPK_AUTO_FUND_ENABLED`, `TPK_FUNDING_PRIVATE_KEY`, `TPK_FUNDING_RPC_URL`, `TPK_FUNDING_AMOUNT_ETH`
 - `CRON_SECRET`, `FORM_INSTITUTION_KEY`, `CORS_ORIGIN`
 

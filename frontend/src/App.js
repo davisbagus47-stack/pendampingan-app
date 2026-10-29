@@ -53,18 +53,23 @@ function App() {
   }, []);
 
   React.useEffect(() => {
-    if (route === 'form' && !session) window.location.hash = LOGIN_ROUTE;
+    if (route === 'form' && !session) {
+      setRoute('login');
+      window.location.hash = LOGIN_ROUTE;
+    }
   }, [route, session]);
 
   const handleAuthenticated = (nextSession) => {
     setSession(nextSession);
     setLoginNotice('');
+    setRoute('form');
     window.location.hash = FORM_ROUTE;
   };
 
   const handleLogout = React.useCallback((message = '') => {
     setSession(null);
     setLoginNotice(message);
+    setRoute('login');
     window.location.hash = LOGIN_ROUTE;
   }, []);
 

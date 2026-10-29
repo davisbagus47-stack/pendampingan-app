@@ -25,6 +25,7 @@ const auditLogChain = require('./lib/audit-log-chain.js');
 const zkpAudit = require('./lib/zkp-audit.js');
 const tpkFunding = require('./lib/tpk-funding.js');
 const tpkIdentity = require('./lib/tpk-identity.js');
+const tpkWalletReset = require('./lib/tpk-wallet-reset.js');
 const config = require('./lib/config.js');
 const { columnName } = require('./lib/field-types');
 const { deriveSections } = require('./lib/sections.js');
@@ -72,6 +73,20 @@ accessLog.pasang(app, () => accessLogger);
 // FR-4.5, AT-14: satu limiter untuk seluruh proses. Menyimpan state di dalam
 // route akan menghitung kuota per permintaan, bukan per instansi.
 const limiter = rateLimit.buatLimiter();
+const walletResetLimiter = rateLimit.buatLimiter();
+const walletResetIssueLimiter = rateLimit.buatLimiter();
+const KUNCI_RESET_WALLET = 'tpk-wallet-reset';
+walletResetLimiter.aturKonfigurasi(KUNCI_RESET_WALLET, {
+  kuota: 30,
+  jendelaMs: 60000,
+  burst: 5,
+});
+const KUNCI_PENERBITAN_RESET_WALLET = 'tpk-wallet-reset-issue';
+walletResetIssueLimiter.aturKonfigurasi(KUNCI_PENERBITAN_RESET_WALLET, {
+  kuota: 5,
+  jendelaMs: 60000,
+  burst: 2,
+});
 
 // ---------------------------------------------------------------------------
 // F3.10a: identitas instansi.
@@ -161,6 +176,8 @@ const JALUR_PUBLIK = new Set([
   'POST /api/submit',
   'POST /api/auth/tpk/verify',
   'POST /api/auth/tpk/wallet',
+  'POST /api/auth/tpk/wallet/reset',
+  'POST /api/admin/tpk/wallet-reset-codes',
   // Cron serverless (Vercel Cron) tidak membawa kunci API instansi; ia
   // mengautentikasi dirinya sendiri lewat CRON_SECRET di handler. Karena itu ia
   // harus melewati gerbang kunci API di sini -- kalau tidak, ia selalu 401.
@@ -1404,6 +1421,178 @@ app.get('/api/sasaran', async (req, res) => {
 // menandatangani pengaitan serta payload form; private key tidak pernah masuk
 // ke server. Identitas resmi diambil dari tpk_members, bukan dari nama form.
 // ---------------------------------------------------------------------------
+app.post('/api/admin/tpk/wallet-reset-codes', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const quota = walletResetIssueLimiter.periksa(KUNCI_PENERBITAN_RESET_WALLET);
+  if (!quota.allowed) {
+    res.set('Retry-After', String(quota.retryAfter));
+    return res.status(429).json({ success: false, message: 'Terlalu banyak permintaan kode reset. Coba lagi nanti.' });
+  }
+  const configuredSecret = process.env.TPK_WALLET_RESET_ADMIN_KEY || '';
+  const suppliedSecret = String(req.get('x-tpk-wallet-reset-admin-key') || '');
+  const expected = Buffer.from(configuredSecret, 'utf8');
+  const supplied = Buffer.from(suppliedSecret, 'utf8');
+  const secretValid = expected.length >= 32 &&
+    supplied.length === expected.length &&
+    crypto.timingSafeEqual(supplied, expected);
+
+  if (!configuredSecret || expected.length < 32) {
+    return res.status(503).json({ success: false, message: 'Penerbitan kode reset belum dikonfigurasi.' });
+  }
+  if (!secretValid) {
+    return res.status(401).json({ success: false, message: 'Akses operator tidak valid.' });
+  }
+  if (!db.urlDatabase()) {
+    return res.status(503).json({ success: false, message: 'Database belum tersedia.' });
+  }
+
+  const nik = normalizeNik(req.body && req.body.nik);
+  if (nik.length !== 16) {
+    return res.status(400).json({ success: false, message: 'NIK harus 16 digit.' });
+  }
+
+  try {
+    const resetCode = tpkWalletReset.buatKodeReset();
+    const tokenHash = tpkWalletReset.hashKodeReset(resetCode);
+    const expiresAt = await db.transaksi({ role: 'operator' }, async (client) => {
+      const member = await client.query(
+        'SELECT nik FROM tpk_members WHERE nik = $1 AND wallet_address IS NOT NULL LIMIT 1',
+        [nik]
+      );
+      if (member.rowCount === 0) return null;
+
+      await client.query(
+        `DELETE FROM tpk_wallet_reset_codes
+          WHERE nik = $1`,
+        [nik]
+      );
+      const inserted = await client.query(
+        `INSERT INTO tpk_wallet_reset_codes (nik, token_hash, expires_at)
+         VALUES ($1, $2, now() + interval '15 minutes')
+         RETURNING expires_at`,
+        [nik, tokenHash]
+      );
+      return inserted.rows[0].expires_at;
+    });
+    if (!expiresAt) {
+      return res.status(404).json({ success: false, message: 'Kader atau wallet terdaftar tidak ditemukan.' });
+    }
+    return res.status(201).json({
+      success: true,
+      resetCode,
+      expiresAt,
+      expiresInMinutes: 15,
+      message: 'Berikan kode ini langsung kepada kader setelah identitasnya diverifikasi. Kode hanya ditampilkan sekali.',
+    });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Penerbitan kode reset wallet gagal:`, error.message);
+    return res.status(500).json({ success: false, message: 'Kode reset wallet gagal diterbitkan.' });
+  }
+});
+
+app.post('/api/auth/tpk/wallet/reset', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const quota = walletResetLimiter.periksa(KUNCI_RESET_WALLET);
+  if (!quota.allowed) {
+    res.set('Retry-After', String(quota.retryAfter));
+    return res.status(429).json({ success: false, message: 'Terlalu banyak percobaan reset. Coba lagi nanti.' });
+  }
+  if (!db.urlDatabase()) {
+    return res.status(503).json({ success: false, message: 'Database belum tersedia.' });
+  }
+
+  const nik = normalizeNik(req.body && req.body.nik);
+  const resetCode = String((req.body && req.body.resetCode) || '');
+  const walletAddress = String((req.body && req.body.walletAddress) || '').trim();
+  const signature = String((req.body && req.body.signature) || '');
+  if (
+    nik.length !== 16 ||
+    !/^[0-9a-f]{64}$/.test(resetCode) ||
+    !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)
+  ) {
+    return res.status(400).json({ success: false, message: 'Data reset wallet tidak valid.' });
+  }
+  if (!tpkIdentity.tandaTanganValid(
+    walletAddress,
+    tpkIdentity.pesanResetWallet(nik, walletAddress, resetCode),
+    signature
+  )) {
+    return res.status(401).json({ success: false, message: 'Tanda tangan wallet tidak valid.' });
+  }
+
+  try {
+    const tokenHash = tpkWalletReset.hashKodeReset(resetCode);
+    const member = await db.transaksi({ role: 'operator' }, async (client) => {
+      const code = await client.query(
+        `SELECT id
+           FROM tpk_wallet_reset_codes
+          WHERE nik = $1 AND token_hash = $2
+            AND used_at IS NULL AND expires_at > now()
+          FOR UPDATE`,
+        [nik, tokenHash]
+      );
+      if (code.rowCount === 0) return null;
+
+      const current = await client.query(
+        'SELECT wallet_address FROM tpk_members WHERE nik = $1 FOR UPDATE',
+        [nik]
+      );
+      const oldWalletAddress = current.rows[0] && current.rows[0].wallet_address;
+      if (!oldWalletAddress || oldWalletAddress.toLowerCase() === walletAddress.toLowerCase()) return null;
+
+      await client.query(
+        'UPDATE tpk_wallet_reset_codes SET used_at = now() WHERE id = $1',
+        [code.rows[0].id]
+      );
+      await client.query(
+        'DELETE FROM tpk_wallet_reset_codes WHERE nik = $1 AND id <> $2',
+        [nik, code.rows[0].id]
+      );
+      await client.query(
+        `INSERT INTO tpk_wallet_history (nik, old_wallet_address, new_wallet_address)
+         VALUES ($1, $2, $3)`,
+        [nik, oldWalletAddress, walletAddress]
+      );
+      const updated = await client.query(
+        `UPDATE tpk_members
+            SET wallet_address = $1,
+                wallet_created_at = now(),
+                funding_status = 'pending',
+                funding_tx_hash = NULL,
+                funding_error = NULL,
+                funding_amount_wei = NULL,
+                funding_attempted_at = NULL,
+                updated_at = now()
+          WHERE nik = $2
+        RETURNING nik, nama_lengkap, wallet_address`,
+        [walletAddress, nik]
+      );
+      return updated.rows[0] || null;
+    });
+
+    if (!member) {
+      return res.status(401).json({
+        success: false,
+        message: 'Kode tidak cocok dengan NIK, kedaluwarsa, atau sudah digunakan. Gunakan kode satu kali dari panel lokal, bukan secret operator.',
+      });
+    }
+    return res.json({
+      success: true,
+      registered: true,
+      walletAddress: member.wallet_address,
+      name: member.nama_lengkap,
+      nik: member.nik,
+      funding: { status: 'pending', reason: 'wallet_baru' },
+    });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ success: false, message: 'Wallet baru sudah terdaftar pada identitas lain.' });
+    }
+    console.error(`[${new Date().toISOString()}] Reset wallet TPK gagal:`, error.message);
+    return res.status(500).json({ success: false, message: 'Reset wallet gagal diproses.' });
+  }
+});
+
 app.post('/api/auth/tpk/verify', async (req, res) => {
   if (!db.urlDatabase()) {
     return res.status(503).json({ success: false, message: 'Database belum tersedia.' });

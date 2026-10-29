@@ -32,6 +32,16 @@ function walletBindingMessage(nik, walletAddress) {
   ].join('\n');
 }
 
+function walletResetMessage(nik, walletAddress, resetCode) {
+  return [
+    'Pendampingan TPK wallet reset v1',
+    'Chain: Sepolia (11155111)',
+    `NIK: ${nik}`,
+    `Wallet: ${walletAddress.toLowerCase()}`,
+    `Reset code: ${resetCode}`,
+  ].join('\n');
+}
+
 function submissionMessage(walletAddress, payload) {
   const payloadHash = keccak256(toUtf8Bytes(stableJson(payload)));
   return [
@@ -61,6 +71,9 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
   const [address, setAddress] = useState('');
   const [balance, setBalance] = useState('0.0000');
   const [password, setPassword] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -197,6 +210,85 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
     finally { setBusy(false); }
   };
 
+  const resetWallet = async (event) => {
+    event.preventDefault();
+    setError(''); setNotice('');
+    if (!member?.walletAddress) {
+      setError('Wallet terdaftar untuk NIK ini tidak ditemukan.');
+      return;
+    }
+    if (!/^[0-9a-f]{64}$/.test(resetCode)) {
+      setError('Masukkan kode reset 64 karakter yang diberikan operator.');
+      return;
+    }
+    if (resetPassword.length < 8) {
+      setError('Password wallet baru minimal 8 karakter.');
+      return;
+    }
+    if (resetPassword !== confirmResetPassword) {
+      setError('Konfirmasi password wallet baru tidak sama.');
+      return;
+    }
+
+    setBusy(true);
+    let resetSucceeded = false;
+    try {
+      const wallet = Wallet.createRandom();
+      const encrypted = await wallet.encrypt(resetPassword);
+      const signature = await wallet.signMessage(walletResetMessage(identity.nik, wallet.address, resetCode));
+      const response = await fetch(`${API_URL}/api/auth/tpk/wallet/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nik: identity.nik, resetCode, walletAddress: wallet.address, signature }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'Reset wallet gagal.');
+
+      resetSucceeded = true;
+      localStorage.setItem(STORAGE_KEY, encrypted);
+      setKeystore(encrypted);
+      setMember((current) => ({ ...current, walletAddress: wallet.address }));
+      setAddress(wallet.address);
+      const backupBlob = new Blob([encrypted], { type: 'application/json' });
+      const backupUrl = URL.createObjectURL(backupBlob);
+      const backupLink = document.createElement('a');
+      backupLink.href = backupUrl;
+      backupLink.download = `wallet-${identity.nik}-backup.json`;
+      backupLink.click();
+      window.setTimeout(() => URL.revokeObjectURL(backupUrl), 1000);
+      setPassword('');
+      setResetCode('');
+      setResetPassword('');
+      setConfirmResetPassword('');
+
+      const linked = await bindWallet(wallet);
+      await waitForFundedWallet(wallet.address, linked.funding);
+      setNotice('Wallet berhasil direset. Password lama tidak dapat membuka wallet baru; simpan backup baru yang diunduh.');
+      onAuthenticated({
+        address: wallet.address,
+        name: linked.name,
+        nik: linked.nik,
+        network: 'Sepolia',
+        funding: { ...linked.funding, status: 'funded' },
+        signSubmission: (payload) => wallet.signMessage(submissionMessage(wallet.address, payload)),
+        updateWalletPassword: async (newPassword) => {
+          const nextKeystore = await wallet.encrypt(newPassword);
+          localStorage.setItem(STORAGE_KEY, nextKeystore);
+          return nextKeystore;
+        },
+      });
+    } catch (e) {
+      if (resetSucceeded) {
+        setNotice('Wallet sudah diganti dan tersimpan di perangkat ini, tetapi pendanaannya belum selesai. Masuk kembali untuk mencoba lagi.');
+        setError(e.message || 'Wallet baru belum siap digunakan.');
+      } else {
+        setError(e.message || 'Reset wallet gagal.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const importBackup = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -263,7 +355,6 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
         <label htmlFor="wallet-password">Password wallet</label>
         <div className="password-field"><input id="wallet-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={walletAlreadyRegistered ? 'Masukkan password wallet' : 'Minimal 8 karakter'} autoComplete="new-password" required /><button className="password-toggle" type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}>{showPassword ? 'Sembunyikan' : 'Tampilkan'}</button></div>
         <button className="web3-primary" type="submit" disabled={busy}>{busy ? 'Memproses...' : walletAlreadyRegistered ? 'Buka wallet terdaftar' : 'Buat wallet sesuai identitas'}</button>
-        {walletAlreadyRegistered && keystore ? <p className="web3-forgot">Lupa password? Password tidak dapat di-reset. Wallet hanya bisa dibuka dengan password yang benar.</p> : null}
       </form> : null}
       {member?.walletAddress && !walletMatchesIdentity ? <div className="web3-recovery">
         <strong>Wallet NIK ini sudah terdaftar</strong>
@@ -272,6 +363,46 @@ export default function Web3Login({ onAuthenticated, initialNotice = '' }) {
           <input id="wallet-backup" type="file" accept=".json,application/json" onChange={importBackup} />
         </label>
       </div> : null}
+      {member?.walletAddress ? <details className="web3-reset">
+        <summary>Lupa password? Reset wallet dengan kode operator</summary>
+        <p>Setelah identitas kader diverifikasi oleh operator, masukkan kode satu kali yang berlaku 15 menit. Reset membuat wallet baru; histori lama tetap tercatat dengan alamat wallet sebelumnya.</p>
+        <form onSubmit={resetWallet}>
+          <label htmlFor="wallet-reset-code">Kode satu kali dari panel lokal (bukan secret operator)</label>
+          <input
+            id="wallet-reset-code"
+            type="password"
+            autoComplete="one-time-code"
+            maxLength="64"
+            value={resetCode}
+            onChange={(event) => setResetCode(event.target.value.trim())}
+            placeholder="64 karakter"
+            required
+          />
+          <label htmlFor="wallet-reset-password">Password wallet baru</label>
+          <input
+            id="wallet-reset-password"
+            type="password"
+            autoComplete="new-password"
+            minLength="8"
+            value={resetPassword}
+            onChange={(event) => setResetPassword(event.target.value)}
+            required
+          />
+          <label htmlFor="wallet-reset-password-confirm">Ulangi password baru</label>
+          <input
+            id="wallet-reset-password-confirm"
+            type="password"
+            autoComplete="new-password"
+            minLength="8"
+            value={confirmResetPassword}
+            onChange={(event) => setConfirmResetPassword(event.target.value)}
+            required
+          />
+          <button className="web3-primary" type="submit" disabled={busy}>
+            {busy ? 'Mereset wallet...' : 'Reset dan buat wallet baru'}
+          </button>
+        </form>
+      </details> : null}
       {error ? <p className="web3-error" role="alert">{error}</p> : null}{notice ? <p className="web3-notice">{notice}</p> : null}
       {address && member ? <div className="wallet-status"><div><span>Alamat</span><strong>{shortAddress(address)}</strong></div><div><span>Jaringan</span><strong>Sepolia testnet</strong></div><div><span>Saldo test ETH</span><strong>{balance} ETH</strong></div></div> : null}
       {address && member ? <button className="web3-secondary web3-copy" type="button" onClick={copyAddress}>{copied ? 'Alamat tersalin' : 'Salin alamat wallet'}</button> : null}
